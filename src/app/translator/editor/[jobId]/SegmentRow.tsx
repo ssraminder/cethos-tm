@@ -30,6 +30,12 @@ function matchBadgeStyle(score: number): string {
   return "bg-[color:var(--color-slate-300)] text-[color:var(--color-slate-700)]";
 }
 
+export interface QaFindingDisplay {
+  rule: string;
+  severity: string;
+  message: string;
+}
+
 export function SegmentRow({
   segment,
   readOnly,
@@ -37,6 +43,7 @@ export function SegmentRow({
   topMatch,
   termHits,
   highlightedSource,
+  qaFindings,
 }: {
   segment: Segment;
   readOnly: boolean;
@@ -44,6 +51,7 @@ export function SegmentRow({
   topMatch: TmMatch | null;
   termHits: TermHit[];
   highlightedSource: ReactNode;
+  qaFindings: QaFindingDisplay[];
 }) {
   const [target, setTarget] = useState(segment.target_text);
   const [status, setStatus] = useState(segment.status);
@@ -218,6 +226,22 @@ export function SegmentRow({
       </div>
 
       <form action={submit} className="flex flex-col gap-2">
+        {qaFindings.length > 0 && (
+          <ul className="space-y-1">
+            {qaFindings.slice(0, 3).map((f, i) => (
+              <li key={`${f.rule}-${i}`} className={[
+                "text-[11px] rounded border px-2 py-1 font-sans",
+                f.severity === "critical" ? "border-[color:var(--color-rose-200)] bg-[color:var(--color-rose-50)] text-[color:var(--color-rose-600)]"
+                  : f.severity === "major" ? "border-[color:var(--color-amber-100)] bg-[color:var(--color-amber-50)] text-[color:var(--color-amber-600)]"
+                  : "border-[color:var(--color-slate-200)] bg-[color:var(--color-slate-50)] text-[color:var(--color-slate-600)]",
+              ].join(" ")}>
+                <span className="font-bold uppercase tracking-wide mr-1">{f.severity}</span>
+                <span className="font-mono mr-1">{f.rule}</span>
+                {f.message}
+              </li>
+            ))}
+          </ul>
+        )}
         <input type="hidden" name="segment_id" value={segment.id} />
         <textarea
           name="target_text"

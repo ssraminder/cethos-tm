@@ -4,6 +4,7 @@ import { PageHeader, KpiCard } from "@/components/AppShell";
 import { getServiceClient } from "@/lib/supabase/server";
 import { requireRole } from "@/lib/auth/current-user";
 import { assignJobAction } from "./actions";
+import { runQaAction } from "./qa-actions";
 import { attachTmToJobAction, detachTmFromJobAction } from "@/app/admin/tm/actions";
 import { attachTermbaseToJobAction, detachTermbaseFromJobAction } from "@/app/admin/termbases/actions";
 
@@ -12,7 +13,7 @@ export default async function JobDetail({
   searchParams,
 }: {
   params: Promise<{ jobId: string }>;
-  searchParams: Promise<{ created?: string; error?: string }>;
+  searchParams: Promise<{ created?: string; error?: string; qa_critical?: string; qa_major?: string; qa_minor?: string }>;
 }) {
   await requireRole(["admin", "pm"]);
   const { jobId } = await params;
@@ -78,6 +79,18 @@ export default async function JobDetail({
     return langs.includes(job.source_lang) && langs.includes(job.target_lang) && !attachedTbIds.has(t.id);
   });
 
+  // QA findings count
+  const segIds = (await supabase.from("segments").select("id").eq("job_id", jobId)).data?.map((r) => r.id) ?? [];
+  const { data: findings } = segIds.length > 0
+    ? await supabase
+        .from("qa_findings")
+        .select("severity, ignored, resolved_at")
+        .in("segment_id", segIds)
+    : { data: [] };
+  const openFindings = (findings ?? []).filter((f) => !f.ignored && !f.resolved_at);
+  const qaCounts = { critical: 0, major: 0, minor: 0 };
+  for (const f of openFindings) qaCounts[f.severity as keyof typeof qaCounts] = (qaCounts[f.severity as keyof typeof qaCounts] ?? 0) + 1;
+
   return (
     <>
       <PageHeader
@@ -99,17 +112,29 @@ export default async function JobDetail({
           Job created — {job.segment_count} segments ready.
         </div>
       )}
+      {(sp.qa_critical || sp.qa_major || sp.qa_minor) && (
+        <div className="mb-4 rounded-md border border-[color:var(--color-amber-100)] bg-[color:var(--color-amber-50)] text-[color:var(--color-amber-600)] px-3 py-2 text-sm">
+          QA run complete — {sp.qa_critical} critical, {sp.qa_major} major, {sp.qa_minor} minor findings.
+        </div>
+      )}
       {sp.error && (
         <div className="mb-4 rounded-md border border-[color:var(--color-rose-100)] bg-[color:var(--color-rose-50)] text-[color:var(--color-rose-600)] px-3 py-2 text-sm">
           {decodeURIComponent(sp.error)}
         </div>
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
         <KpiCard label="Status" value={job.status.replace("_", " ")} />
         <KpiCard label="Untranslated" value={String(counts["untranslated"] ?? 0)} />
         <KpiCard label="Translated" value={String((counts["translated"] ?? 0) + (counts["reviewed"] ?? 0))} />
-        <KpiCard label="Confirmed" value={String(counts["reviewed"] ?? 0)} />
+        <KpiCard label="QA critical" value={String(qaCounts.critical)} hint={`${qaCounts.major} major, ${qaCounts.minor} minor`} />
+        <div className="bg-white rounded-xl border border-[color:var(--color-border)] p-4 shadow-[var(--shadow-soft)] flex flex-col justify-between">
+          <div className="text-[10px] uppercase tracking-wider font-bold text-[color:var(--color-slate-500)]">QA</div>
+          <form action={runQaAction}>
+            <input type="hidden" name="job_id" value={job.id} />
+            <button type="submit" className="mt-2 w-full px-3 py-2 text-sm font-semibold rounded-md bg-[color:var(--color-amber-500)] hover:bg-[color:var(--color-amber-600)] text-white">Run QA</button>
+          </form>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

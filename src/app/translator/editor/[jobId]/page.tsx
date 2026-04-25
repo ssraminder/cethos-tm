@@ -51,11 +51,25 @@ export default async function EditorPage({
   }
   const pct = counts.total > 0 ? Math.round((counts.confirmed / counts.total) * 100) : 0;
 
-  // Pre-compute leverage data in two parallel round-trips.
-  const [exactMatches, termHits] = await Promise.all([
+  // Pre-compute leverage data in parallel round-trips.
+  const segIdsForFindings = ((await supabase.from("segments").select("id").eq("job_id", jobId)).data ?? []).map((r) => r.id);
+  const [exactMatches, termHits, findingsRes] = await Promise.all([
     getExactMatchesForJob(jobId),
     getTermHitsForJob(jobId),
+    segIdsForFindings.length > 0
+      ? supabase
+          .from("qa_findings")
+          .select("segment_id, rule, severity, message, ignored, resolved_at")
+          .in("segment_id", segIdsForFindings)
+      : Promise.resolve({ data: [] }),
   ]);
+  const findingsBySeg = new Map<string, Array<{ rule: string; severity: string; message: string }>>();
+  for (const f of (findingsRes.data ?? []) as Array<{ segment_id: string; rule: string; severity: string; message: string; ignored: boolean; resolved_at: string | null }>) {
+    if (f.ignored || f.resolved_at) continue;
+    const arr = findingsBySeg.get(f.segment_id) ?? [];
+    arr.push({ rule: f.rule, severity: f.severity, message: f.message });
+    findingsBySeg.set(f.segment_id, arr);
+  }
 
   const { data: attachedTms } = await supabase
     .from("job_resources")
@@ -144,6 +158,7 @@ export default async function EditorPage({
                     topMatch={exactMatches.get(s.id) ?? null}
                     termHits={hits}
                     highlightedSource={<HighlightedSource source={s.source_text} hits={hits} />}
+                    qaFindings={findingsBySeg.get(s.id) ?? []}
                   />
                 );
               })}
