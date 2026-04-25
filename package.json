@@ -17,9 +17,11 @@
     "jose": "^5.9.6",
     "lucide-react": "^0.468.0",
     "mailgun.js": "^10.4.0",
+    "mammoth": "^1.12.0",
     "next": "^16.2.4",
     "react": "19.0.0",
     "react-dom": "19.0.0",
+    "sbd": "^1.0.19",
     "zod": "^3.24.1"
   },
   "devDependencies": {
@@ -27,6 +29,7 @@
     "@types/node": "^22.10.2",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
+    "@types/sbd": "^1.0.5",
     "eslint": "^9.17.0",
     "eslint-config-next": "^16.2.4",
     "postcss": "^8.4.49",
