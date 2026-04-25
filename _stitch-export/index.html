@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Cethos — Translation, evolved</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --navy: #0C2340;
+    --navy-700: #0A1C33;
+    --navy-800: #081526;
+    --navy-900: #050E1A;
+    --teal: #0891B2;
+    --teal-light: #06B6D4;
+    --teal-50: #ECFEFF;
+    --teal-100: #CFFAFE;
+    --teal-700: #0E7490;
+    --gray: #4B5563;
+    --gray-light: #717182;
+    --border: #E5E7EB;
+    --border-soft: #EEF1F4;
+    --bg: #FFFFFF;
+    --bg-light: #F8FAFC;
+    --bg-blue: #E0F2FE;
+    --bg-app: #F5F7FA;
+    --slate-50: #F8FAFC;
+    --slate-100: #F1F5F9;
+    --slate-200: #E2E8F0;
+    --slate-300: #CBD5E1;
+    --slate-400: #94A3B8;
+    --slate-500: #64748B;
+    --slate-600: #475569;
+    --slate-700: #334155;
+    --slate-800: #1E293B;
+    --slate-900: #0F172A;
+    --emerald-50: #ECFDF5;
+    --emerald-100: #D1FAE5;
+    --emerald-500: #10B981;
+    --emerald-600: #059669;
+    --emerald-700: #047857;
+    --lime-100: #ECFCCB;
+    --lime-500: #84CC16;
+    --lime-600: #65A30D;
+    --amber-50: #FFFBEB;
+    --amber-100: #FEF3C7;
+    --amber-500: #F59E0B;
+    --amber-600: #D97706;
+    --rose-50: #FFF1F2;
+    --rose-100: #FFE4E6;
+    --rose-500: #F43F5E;
+    --rose-600: #E11D48;
+    --purple-100: #F3E8FF;
+    --purple-500: #A855F7;
+    --purple-600: #9333EA;
+
+    --shadow-soft: 0 2px 15px -3px rgba(12, 35, 64, 0.06), 0 6px 20px -2px rgba(12, 35, 64, 0.04);
+    --shadow-md: 0 4px 25px -5px rgba(12, 35, 64, 0.08), 0 10px 30px -5px rgba(12, 35, 64, 0.04);
+    --shadow-lg: 0 20px 50px -10px rgba(12, 35, 64, 0.18);
+    --shadow-focus: 0 0 0 3px rgba(8, 145, 178, 0.18);
+
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-xl: 16px;
+    --radius-full: 9999px;
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    background: var(--bg-app);
+    color: var(--navy);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+  button { font-family: inherit; cursor: pointer; border: none; background: none; }
+  input, textarea, select { font-family: inherit; }
+  ::selection { background: var(--bg-blue); color: var(--navy); }
+
+  /* App shell */
+  #root { min-height: 100vh; }
+
+  /* Scrollbars */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--slate-200); border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--slate-300); background-clip: padding-box; border: 2px solid transparent; }
+
+  /* Utility */
+  .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="src/icons.jsx"></script>
+<script type="text/babel" src="src/primitives.jsx"></script>
+<script type="text/babel" src="src/data.jsx"></script>
+<script type="text/babel" src="src/auth.jsx"></script>
+<script type="text/babel" src="src/admin.jsx"></script>
+<script type="text/babel" src="src/pm.jsx"></script>
+<script type="text/babel" src="src/translator.jsx"></script>
+<script type="text/babel" src="src/overlays.jsx"></script>
+<script type="text/babel" src="src/app.jsx"></script>
+</body>
+</html>
