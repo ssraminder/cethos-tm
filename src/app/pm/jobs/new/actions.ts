@@ -6,7 +6,9 @@ import { z } from "zod";
 import { getServerClient, getServiceClient } from "@/lib/supabase/server";
 import { requireRole } from "@/lib/auth/current-user";
 import { detectFormat, extractText, type SupportedFormat } from "@/lib/jobs/extraction";
-import { segmentText, totalWords } from "@/lib/jobs/segmentation";
+import { segmentText, totalWords, type Segment } from "@/lib/jobs/segmentation";
+import { parseXliff } from "@/lib/xliff/parse";
+import { createHash } from "node:crypto";
 import { generateJobReference } from "@/lib/jobs/reference";
 import { audit } from "@/lib/auth/audit";
 
@@ -50,22 +52,60 @@ export async function createJobFromUploadAction(formData: FormData): Promise<voi
   if (format === "unknown") {
     redirect(`/pm/jobs/new?error=${encodeURIComponent(`Unsupported file format: ${file!.name}`)}`);
   }
-  if (format === "xliff") {
-    redirect(`/pm/jobs/new?error=${encodeURIComponent("XLIFF support is on the roadmap. Use .docx, .txt, .md, .html, or .json for now.")}`);
-  }
 
   const buffer = Buffer.from(await file!.arrayBuffer());
-  let plain: string;
-  try {
-    plain = await extractText(buffer, format);
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : "Could not read file";
-    redirect(`/pm/jobs/new?error=${encodeURIComponent(`Extraction failed: ${msg}`)}`);
-  }
 
-  const segments = segmentText(plain!);
-  if (segments.length === 0) {
-    redirect(`/pm/jobs/new?error=${encodeURIComponent("No translatable text found in the file.")}`);
+  // XLIFF is bilingual — segments come from <trans-unit>, no SBD needed.
+  // Pre-existing target text is preserved on the segment with status='draft'
+  // (or 'translated' if the XLIFF marked it final/translated/approved).
+  let segments: Segment[];
+  let preTargets: Map<number, { text: string; status: "draft" | "translated" }> | null = null;
+  let actualSourceLang = source_lang;
+  let actualTargetLang = target_lang;
+  if (format === "xliff") {
+    let parsed;
+    try {
+      parsed = parseXliff(buffer);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "XLIFF parse failed";
+      redirect(`/pm/jobs/new?error=${encodeURIComponent(msg)}`);
+    }
+    if (parsed!.source_lang) actualSourceLang = parsed!.source_lang;
+    if (parsed!.target_lang) actualTargetLang = parsed!.target_lang;
+    if (actualSourceLang === actualTargetLang) {
+      redirect(`/pm/jobs/new?error=${encodeURIComponent("XLIFF source and target languages are identical.")}`);
+    }
+    if (parsed!.units.length === 0) {
+      redirect(`/pm/jobs/new?error=${encodeURIComponent("XLIFF contained no translatable units.")}`);
+    }
+    segments = [];
+    preTargets = new Map();
+    parsed!.units.forEach((u, i) => {
+      const seq = i + 1;
+      const norm = u.source_text.normalize("NFC").replace(/\s+/g, " ").trim().toLowerCase();
+      segments.push({
+        seq,
+        source_text: u.source_text.trim(),
+        source_hash: createHash("sha256").update(norm).digest("hex"),
+        word_count: u.source_text.trim().split(/\s+/).filter(Boolean).length,
+      });
+      if (u.target_text && u.target_text.trim()) {
+        const isFinal = u.approved === true || u.state === "translated" || u.state === "final";
+        preTargets!.set(seq, { text: u.target_text.trim(), status: isFinal ? "translated" : "draft" });
+      }
+    });
+  } else {
+    let plain: string;
+    try {
+      plain = await extractText(buffer, format);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Could not read file";
+      redirect(`/pm/jobs/new?error=${encodeURIComponent(`Extraction failed: ${msg}`)}`);
+    }
+    segments = segmentText(plain!);
+    if (segments.length === 0) {
+      redirect(`/pm/jobs/new?error=${encodeURIComponent("No translatable text found in the file.")}`);
+    }
   }
   const wordTotal = totalWords(segments);
 
@@ -79,8 +119,8 @@ export async function createJobFromUploadAction(formData: FormData): Promise<voi
   const jobInsert = {
     reference,
     source: "manual",
-    source_lang,
-    target_lang,
+    source_lang: actualSourceLang,
+    target_lang: actualTargetLang,
     status: assigned_to ? "assigned" : "draft",
     source_filename: file!.name,
     source_format: format,
@@ -115,14 +155,19 @@ export async function createJobFromUploadAction(formData: FormData): Promise<voi
   }
   await service.from("jobs").update({ source_storage_path: storagePath }).eq("id", jobId);
 
-  // 3) Bulk insert segments.
-  const rows = segments.map((s) => ({
-    job_id: jobId,
-    seq: s.seq,
-    source_text: s.source_text,
-    source_hash: s.source_hash,
-    word_count: s.word_count,
-  }));
+  // 3) Bulk insert segments. For XLIFF, also populate pre-existing target text.
+  const rows = segments.map((s) => {
+    const pre = preTargets?.get(s.seq);
+    return {
+      job_id: jobId,
+      seq: s.seq,
+      source_text: s.source_text,
+      source_hash: s.source_hash,
+      word_count: s.word_count,
+      target_text: pre?.text ?? "",
+      status: pre?.status ?? "untranslated",
+    };
+  });
   // Chunk inserts — Postgres has a parameter limit per statement.
   const CHUNK = 500;
   for (let i = 0; i < rows.length; i += CHUNK) {

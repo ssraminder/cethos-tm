@@ -62,6 +62,10 @@ export async function extractText(buffer: Buffer, format: SupportedFormat): Prom
     }
 
     case "xliff":
+      // XLIFF is bilingual — caller must use parseXliff() instead of going
+      // through the plain-text segmenter. Reaching this branch is a bug.
+      throw new Error("XLIFF should be ingested via parseXliff(), not extractText().");
+
     case "unknown":
     default:
       throw new Error(`Format '${format}' not yet supported for extraction.`);

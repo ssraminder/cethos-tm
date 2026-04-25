@@ -84,9 +84,13 @@ export default async function JobDetail({
         title={`Job ${job.reference}`}
         subtitle={`${job.source_lang} → ${job.target_lang} · ${job.word_count.toLocaleString()} words · ${job.segment_count} segments`}
         actions={
-          job.assigned_to ? (
-            <Link href={`/translator/editor/${job.id}`} className="px-3 py-2 text-sm font-semibold rounded-md bg-[color:var(--color-navy)] text-white">Open editor (read-only)</Link>
-          ) : null
+          <div className="flex items-center gap-2">
+            {job.assigned_to && (
+              <Link href={`/translator/editor/${job.id}`} className="px-3 py-2 text-sm font-semibold rounded-md bg-[color:var(--color-navy)] text-white">Open editor (read-only)</Link>
+            )}
+            <a href={`/pm/jobs/${job.id}/export?format=xliff`} className="px-3 py-2 text-sm font-semibold rounded-md border border-[color:var(--color-slate-200)] bg-white">Download XLIFF</a>
+            <a href={`/pm/jobs/${job.id}/export?format=txt`} className="px-3 py-2 text-sm font-semibold rounded-md border border-[color:var(--color-slate-200)] bg-white">Download TXT</a>
+          </div>
         }
       />
 
