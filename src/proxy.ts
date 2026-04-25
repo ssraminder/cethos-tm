@@ -11,7 +11,7 @@ const PUBLIC_PATHS = [
   "/forgot-password",
   "/reset-password",
   "/sso",
-  "/api/auth",
+  "/api",                 // /api/* uses Bearer-token auth (or none for public health), never the Supabase session
   "/_next",
   "/favicon.ico",
   "/assets",
