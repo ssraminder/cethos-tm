@@ -24,7 +24,7 @@ const ROLE_HOME: Record<string, string> = {
   reviewer: "/translator",
 };
 
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const res = NextResponse.next();
   const { pathname } = req.nextUrl;
 
