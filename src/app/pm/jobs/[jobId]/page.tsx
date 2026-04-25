@@ -7,6 +7,7 @@ import { assignJobAction } from "./actions";
 import { runQaAction } from "./qa-actions";
 import { attachTmToJobAction, detachTmFromJobAction } from "@/app/admin/tm/actions";
 import { attachTermbaseToJobAction, detachTermbaseFromJobAction } from "@/app/admin/termbases/actions";
+import { RealtimeJobStatus } from "@/components/RealtimeJobStatus";
 
 export default async function JobDetail({
   params,
@@ -97,7 +98,8 @@ export default async function JobDetail({
         title={`Job ${job.reference}`}
         subtitle={`${job.source_lang} → ${job.target_lang} · ${job.word_count.toLocaleString()} words · ${job.segment_count} segments`}
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            <RealtimeJobStatus jobId={job.id} />
             {job.assigned_to && (
               <Link href={`/translator/editor/${job.id}`} className="px-3 py-2 text-sm font-semibold rounded-md bg-[color:var(--color-navy)] text-white">Open editor (read-only)</Link>
             )}

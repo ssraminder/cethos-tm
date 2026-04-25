@@ -6,6 +6,7 @@ import { getExactMatchesForJob } from "@/lib/tm/match";
 import { getTermHitsForJob } from "@/lib/termbase/hits";
 import { SegmentRow } from "./SegmentRow";
 import { HighlightedSource } from "./HighlightedSource";
+import { RealtimeJobStatus } from "@/components/RealtimeJobStatus";
 
 export default async function EditorPage({
   params,
@@ -98,6 +99,7 @@ export default async function EditorPage({
         </div>
         <div className="flex-1" />
         <div className="flex items-center gap-3">
+          <RealtimeJobStatus jobId={jobId} />
           <div className="text-xs text-[color:var(--color-slate-500)]">{counts.confirmed} / {counts.total} confirmed · {pct}%</div>
           <div className="w-32 h-1.5 rounded-full bg-[color:var(--color-slate-100)] overflow-hidden">
             <div className="h-full bg-[color:var(--color-emerald-500)]" style={{ width: `${pct}%` }} />
