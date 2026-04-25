@@ -1,4 +1,5 @@
 import { XMLParser } from "fast-xml-parser";
+import { extractInlineTags, iterateTransUnits, findInnerXml, reinsertInlineTags, type InlineTag } from "./tags";
 
 export type XliffVersion = "1.2" | "2.0";
 
@@ -8,6 +9,8 @@ export interface XliffUnit {
   target_text?: string;
   state?: string;          // 'new' | 'translated' | 'final' | 'needs-translation' | etc.
   approved?: boolean;
+  source_tags?: InlineTag[];
+  target_tags?: InlineTag[];
 }
 
 export interface XliffParseResult {
@@ -59,10 +62,10 @@ export function parseXliff(input: Buffer | string): XliffParseResult {
 
   const version = String(xliff["@_version"] ?? "1.2");
   if (version.startsWith("2")) return parseV2(xliff);
-  return parseV1(xliff);
+  return parseV1(xliff, text);
 }
 
-function parseV1(xliff: XmlNode): XliffParseResult {
+function parseV1(xliff: XmlNode, rawText: string): XliffParseResult {
   const files = asArray(xliff.file);
   if (files.length === 0) throw new Error("XLIFF 1.2: no <file> element.");
   const file = files[0]!;
@@ -70,31 +73,42 @@ function parseV1(xliff: XmlNode): XliffParseResult {
   const target_lang = String(file["@_target-language"] ?? "");
   if (!source_lang) throw new Error("XLIFF 1.2: missing source-language.");
 
-  const body = file.body as XmlNode | undefined;
-  if (!body) throw new Error("XLIFF 1.2: missing <body>.");
-
+  // Use raw-text iteration so inline tags inside <source>/<target> can be
+  // extracted with their original XML preserved.
   const tus: XliffUnit[] = [];
-  function walkGroups(node: XmlNode) {
-    for (const g of asArray(node.group)) {
-      for (const tu of asArray(g["trans-unit"])) collect(tu);
-      walkGroups(g);
+  for (const { id, block, approved } of iterateTransUnits(rawText)) {
+    if (!id) continue;
+    const sourceInner = findInnerXml(block, "source");
+    const targetInner = findInnerXml(block, "target");
+    if (!sourceInner) continue;
+
+    const srcExtracted = extractInlineTags(sourceInner);
+    const src = srcExtracted.plain_text.trim();
+    if (!src) continue;
+
+    let target_text: string | undefined;
+    let target_tags: InlineTag[] | undefined;
+    let state: string | undefined;
+    if (targetInner !== null) {
+      const tgtExtracted = extractInlineTags(targetInner);
+      const tgt = tgtExtracted.plain_text.trim();
+      target_text = tgt || undefined;
+      target_tags = tgtExtracted.tags.length > 0 ? tgtExtracted.tags : undefined;
+      // <target state="..."> attribute lives in the opening tag of <target> within block
+      const stateMatch = block.match(/<target\b[^>]*\bstate\s*=\s*["']([^"']+)["']/i);
+      state = stateMatch ? stateMatch[1] : undefined;
     }
+
+    tus.push({
+      id,
+      source_text: src,
+      target_text,
+      state,
+      approved,
+      source_tags: srcExtracted.tags.length > 0 ? srcExtracted.tags : undefined,
+      target_tags,
+    });
   }
-  function collect(tu: XmlNode) {
-    const id = String(tu["@_id"] ?? "");
-    if (!id) return;
-    const src = pickText(tu.source).trim();
-    if (!src) return;
-    const targetRaw = tu.target;
-    const tgt = targetRaw ? pickText(targetRaw).trim() : "";
-    const targetState = targetRaw && typeof targetRaw === "object"
-      ? String((targetRaw as XmlNode)["@_state"] ?? "")
-      : "";
-    const approved = String(tu["@_approved"] ?? "") === "yes";
-    tus.push({ id, source_text: src, target_text: tgt || undefined, state: targetState || undefined, approved });
-  }
-  for (const tu of asArray(body["trans-unit"])) collect(tu);
-  walkGroups(body);
 
   return { version: "1.2", source_lang, target_lang, units: tus };
 }
@@ -147,6 +161,8 @@ export interface XliffExportSegment {
   target_text: string;
   state?: "new" | "translated" | "needs-translation" | "final";
   approved?: boolean;
+  /** Original inline tags from the source — used to substitute {N} markers back into target XML */
+  source_tags?: InlineTag[];
 }
 
 function escapeXml(s: string): string {
@@ -172,9 +188,15 @@ export function buildXliff12({
   const tus = segments.map((s) => {
     const state = s.state ?? (s.target_text ? "translated" : "new");
     const approved = s.approved ? ` approved="yes"` : "";
+    const sourceInner = s.source_tags && s.source_tags.length > 0
+      ? reinsertInlineTags(s.source_text, s.source_tags).xml_inner
+      : escapeXml(s.source_text);
+    const targetInner = s.source_tags && s.source_tags.length > 0
+      ? reinsertInlineTags(s.target_text || "", s.source_tags).xml_inner
+      : escapeXml(s.target_text || "");
     return `    <trans-unit id="${escapeXml(s.id)}"${approved}>
-      <source>${escapeXml(s.source_text)}</source>
-      <target state="${escapeXml(state)}">${escapeXml(s.target_text || "")}</target>
+      <source>${sourceInner}</source>
+      <target state="${escapeXml(state)}">${targetInner}</target>
     </trans-unit>`;
   }).join("\n");
 
