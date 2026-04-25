@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getServiceClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/auth/current-user";
+import { findMatchesForSegment, type TmMatch } from "@/lib/tm/match";
 
 const SaveSchema = z.object({
   segment_id: z.string().uuid(),
@@ -25,7 +26,6 @@ export async function saveSegmentAction(formData: FormData): Promise<SaveResult>
   const { segment_id, target_text, confirm } = parsed.data!;
   const supabase = await getServiceClient();
 
-  // Fetch segment + its job to enforce ownership.
   const { data: seg } = await supabase
     .from("segments")
     .select("id, job_id, status, jobs!inner(assigned_to, status)")
@@ -33,7 +33,6 @@ export async function saveSegmentAction(formData: FormData): Promise<SaveResult>
     .maybeSingle();
   if (!seg) return { ok: false, error: "Segment not found" };
 
-  // RLS-equivalent ownership check (we use service role here for simplicity)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const job = (seg as any).jobs;
   if (job.assigned_to !== me.id && me.role !== "admin" && me.role !== "pm") {
@@ -47,14 +46,11 @@ export async function saveSegmentAction(formData: FormData): Promise<SaveResult>
   const wantConfirm = !!confirm && trimmed.length > 0;
   const newStatus = wantConfirm ? "translated" : trimmed.length > 0 ? "draft" : "untranslated";
 
-  const update: Record<string, unknown> = {
-    target_text: trimmed,
-    status: newStatus,
-  };
+  const update: Record<string, unknown> = { target_text: trimmed, status: newStatus };
   if (wantConfirm) {
     update.confirmed_by = me.id;
     update.confirmed_at = new Date().toISOString();
-  } else if (newStatus === "draft" || newStatus === "untranslated") {
+  } else {
     update.confirmed_by = null;
     update.confirmed_at = null;
   }
@@ -62,11 +58,37 @@ export async function saveSegmentAction(formData: FormData): Promise<SaveResult>
   const { error } = await supabase.from("segments").update(update).eq("id", segment_id);
   if (error) return { ok: false, error: error.message };
 
-  // If job was 'assigned', flip to 'in_progress' on first edit.
   if (job.status === "assigned" && trimmed.length > 0) {
     await supabase.from("jobs").update({ status: "in_progress" }).eq("id", seg!.job_id);
   }
 
   revalidatePath(`/translator/editor/${seg!.job_id}`);
   return { ok: true };
+}
+
+const FindSchema = z.object({
+  job_id: z.string().uuid(),
+  source_text: z.string().min(1).max(5_000),
+});
+
+export type FindResult = { ok: true; matches: TmMatch[] } | { ok: false; error: string };
+
+export async function findMatchesAction(input: { job_id: string; source_text: string }): Promise<FindResult> {
+  const me = await getCurrentUser();
+  const parsed = FindSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+
+  // Authorization: must be assigned to job OR staff
+  const supabase = await getServiceClient();
+  const { data: job } = await supabase.from("jobs").select("assigned_to, reviewer_id").eq("id", parsed.data!.job_id).maybeSingle();
+  if (!job) return { ok: false, error: "Job not found" };
+  const ok = job.assigned_to === me.id || job.reviewer_id === me.id || me.role === "admin" || me.role === "pm";
+  if (!ok) return { ok: false, error: "Forbidden" };
+
+  try {
+    const matches = await findMatchesForSegment(parsed.data!.job_id, parsed.data!.source_text, 5);
+    return { ok: true, matches };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Match failed" };
+  }
 }

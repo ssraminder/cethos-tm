@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<tmx version="1.4">
+  <header creationtool="cethos-smoke" creationtoolversion="1.0" segtype="sentence"
+          o-tmf="cethos" adminlang="en" srclang="en-US" datatype="plaintext"/>
+  <body>
+    <tu>
+      <tuv xml:lang="en-US"><seg>Hello, world.</seg></tuv>
+      <tuv xml:lang="fr-FR"><seg>Bonjour, le monde.</seg></tuv>
+    </tu>
+    <tu>
+      <tuv xml:lang="en-US"><seg>This is the first paragraph with two sentences.</seg></tuv>
+      <tuv xml:lang="fr-FR"><seg>Ceci est le premier paragraphe avec deux phrases.</seg></tuv>
+    </tu>
+    <tu>
+      <tuv xml:lang="en-US"><seg>The quick brown fox jumps over the lazy dog.</seg></tuv>
+      <tuv xml:lang="fr-FR"><seg>Le rapide renard brun saute par-dessus le chien paresseux.</seg></tuv>
+    </tu>
+    <tu>
+      <tuv xml:lang="en-US"><seg>Welcome to Acme Corporation.</seg></tuv>
+      <tuv xml:lang="fr-FR"><seg>Bienvenue chez Acme Corporation.</seg></tuv>
+    </tu>
+    <tu>
+      <tuv xml:lang="en-US"><seg>Please contact our support team for assistance.</seg></tuv>
+      <tuv xml:lang="fr-FR"><seg>Veuillez contacter notre équipe d'assistance pour obtenir de l'aide.</seg></tuv>
+    </tu>
+  </body>
+</tmx>

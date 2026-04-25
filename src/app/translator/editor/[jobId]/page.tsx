@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getServiceClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/auth/current-user";
+import { getExactMatchesForJob } from "@/lib/tm/match";
 import { SegmentRow } from "./SegmentRow";
 
 export default async function EditorPage({
@@ -37,24 +38,29 @@ export default async function EditorPage({
 
   const { data: segments } = await q;
 
-  const counts = {
-    total: job.segment_count,
-    confirmed: 0,
-    draft: 0,
-  };
   const { data: stats } = await supabase
     .from("segments")
     .select("status")
     .eq("job_id", jobId);
+  const counts = { total: job.segment_count, confirmed: 0, draft: 0 };
   for (const s of stats ?? []) {
     if (s.status === "translated" || s.status === "reviewed") counts.confirmed++;
     else if (s.status === "draft") counts.draft++;
   }
   const pct = counts.total > 0 ? Math.round((counts.confirmed / counts.total) * 100) : 0;
 
+  // Pre-compute exact TM matches for the visible segments (single round-trip).
+  const exactMatches = await getExactMatchesForJob(jobId);
+
+  const { data: attachedTms } = await supabase
+    .from("job_resources")
+    .select("resource_id, priority, translation_memories!inner(name, source_lang, target_lang)")
+    .eq("job_id", jobId)
+    .eq("resource_type", "tm")
+    .order("priority", { ascending: true });
+
   return (
     <div className="min-h-screen flex flex-col" style={{ background: "var(--color-bg-app)" }}>
-      {/* Top bar */}
       <header className="h-14 bg-white border-b border-[color:var(--color-border)] px-4 flex items-center gap-4">
         <Link href={isStaff ? `/pm/jobs/${job.id}` : "/translator"} className="text-[color:var(--color-slate-500)] hover:text-[color:var(--color-navy)] text-sm">← {isStaff ? "Job" : "Inbox"}</Link>
         <div className="text-sm flex items-center gap-2">
@@ -73,7 +79,6 @@ export default async function EditorPage({
         </div>
       </header>
 
-      {/* Filter bar */}
       <div className="px-4 py-2 bg-white border-b border-[color:var(--color-border-soft)] flex items-center gap-2 text-xs">
         <span className="text-[color:var(--color-slate-500)] font-semibold uppercase tracking-wide">Filter:</span>
         {([
@@ -95,10 +100,14 @@ export default async function EditorPage({
             {f.label}
           </Link>
         ))}
+        <span className="ml-auto text-[color:var(--color-slate-500)]">
+          {attachedTms && attachedTms.length > 0
+            ? `${attachedTms.length} TM${attachedTms.length === 1 ? "" : "s"} attached · ${exactMatches.size} exact match${exactMatches.size === 1 ? "" : "es"}`
+            : "No TMs attached — leverage panel disabled"}
+        </span>
       </div>
 
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_360px] min-h-0">
-        {/* Segments column */}
         <div className="overflow-y-auto bg-white border-r border-[color:var(--color-border)]">
           {(segments ?? []).length === 0 ? (
             <div className="p-12 text-center text-sm text-[color:var(--color-slate-500)]">
@@ -113,26 +122,48 @@ export default async function EditorPage({
                 <div>Target</div>
               </div>
               {(segments ?? []).map((s) => (
-                <SegmentRow key={s.id} segment={s as never} readOnly={readOnly} />
+                <SegmentRow
+                  key={s.id}
+                  segment={s as never}
+                  readOnly={readOnly}
+                  jobId={jobId}
+                  topMatch={exactMatches.get(s.id) ?? null}
+                />
               ))}
             </div>
           )}
         </div>
 
-        {/* Right rail */}
         <aside className="overflow-y-auto bg-white p-5 hidden lg:block">
-          <div className="text-[10px] uppercase tracking-wider font-bold text-[color:var(--color-slate-500)] mb-2">Active segment context</div>
-          <div className="rounded-lg border border-dashed border-[color:var(--color-border)] p-6 text-sm text-[color:var(--color-slate-500)] text-center">
-            TM matches, termbase hits, MT suggestions, comments, and QA findings will appear here when a segment is selected.
-            <div className="mt-2 text-xs">(Wiring in the next chunk.)</div>
-          </div>
+          <div className="text-[10px] uppercase tracking-wider font-bold text-[color:var(--color-slate-500)] mb-2">Attached translation memories</div>
+          {!attachedTms || attachedTms.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-[color:var(--color-border)] p-4 text-sm text-[color:var(--color-slate-500)]">
+              No TMs attached. {isStaff && (
+                <Link href={`/pm/jobs/${job.id}`} className="text-[color:var(--color-teal-700)] font-semibold hover:underline ml-1">
+                  Attach from job page →
+                </Link>
+              )}
+            </div>
+          ) : (
+            <ul className="space-y-1.5">
+              {attachedTms.map((r) => {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const tm = (r as any).translation_memories;
+                return (
+                  <li key={r.resource_id} className="rounded-md border border-[color:var(--color-border)] p-2 text-sm">
+                    <div className="font-semibold text-[color:var(--color-navy)] truncate">{tm.name}</div>
+                    <div className="text-[10px] text-[color:var(--color-slate-500)] mono">{tm.source_lang} → {tm.target_lang} · priority {r.priority}</div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
 
           <div className="mt-6 text-[10px] uppercase tracking-wider font-bold text-[color:var(--color-slate-500)] mb-2">Job</div>
           <div className="text-sm space-y-1">
             <div className="flex justify-between"><span className="text-[color:var(--color-slate-500)]">Status</span><span className="capitalize">{job.status.replace("_", " ")}</span></div>
             <div className="flex justify-between"><span className="text-[color:var(--color-slate-500)]">Words</span><span>{job.word_count.toLocaleString()}</span></div>
             <div className="flex justify-between"><span className="text-[color:var(--color-slate-500)]">Segments</span><span>{job.segment_count}</span></div>
-            <div className="flex justify-between"><span className="text-[color:var(--color-slate-500)]">Source</span><span className="mono text-xs">{job.source_filename}</span></div>
           </div>
         </aside>
       </div>

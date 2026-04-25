@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { saveSegmentAction } from "./actions";
+import { saveSegmentAction, findMatchesAction } from "./actions";
+import type { TmMatch } from "@/lib/tm/match";
 
 interface Segment {
   id: string;
@@ -20,13 +21,32 @@ const statusStyle: Record<Segment["status"], { dot: string; label: string }> = {
   locked:       { dot: "bg-[color:var(--color-slate-400)]", label: "Locked" },
 };
 
-export function SegmentRow({ segment, readOnly }: { segment: Segment; readOnly: boolean }) {
+function matchBadgeStyle(score: number): string {
+  if (score >= 1)    return "bg-[color:var(--color-emerald-500)] text-white";
+  if (score >= 0.95) return "bg-[color:var(--color-lime-500)] text-white";
+  if (score >= 0.75) return "bg-[color:var(--color-amber-500)] text-white";
+  return "bg-[color:var(--color-slate-300)] text-[color:var(--color-slate-700)]";
+}
+
+export function SegmentRow({
+  segment,
+  readOnly,
+  jobId,
+  topMatch,
+}: {
+  segment: Segment;
+  readOnly: boolean;
+  jobId: string;
+  topMatch: TmMatch | null;
+}) {
   const [target, setTarget] = useState(segment.target_text);
   const [status, setStatus] = useState(segment.status);
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [active, setActive] = useState(false);
+  const [matches, setMatches] = useState<TmMatch[] | null>(null);
+  const [matchesLoading, setMatchesLoading] = useState(false);
 
   function submit(formData: FormData) {
     startTransition(async () => {
@@ -41,6 +61,24 @@ export function SegmentRow({ segment, readOnly }: { segment: Segment; readOnly: 
       const trimmed = String(formData.get("target_text") ?? "").trim();
       setStatus(wantConfirm ? "translated" : trimmed ? "draft" : "untranslated");
     });
+  }
+
+  async function loadMatches() {
+    setMatchesLoading(true);
+    const res = await findMatchesAction({ job_id: jobId, source_text: segment.source_text });
+    setMatchesLoading(false);
+    if (res.ok) setMatches(res.matches);
+    else setError(res.error);
+  }
+
+  function insertMatch(m: TmMatch, andConfirm = false) {
+    setTarget(m.target_text);
+    if (readOnly) return;
+    const fd = new FormData();
+    fd.append("segment_id", segment.id);
+    fd.append("target_text", m.target_text);
+    if (andConfirm) fd.append("confirm", "1");
+    submit(fd);
   }
 
   const meta = statusStyle[status];
@@ -63,14 +101,58 @@ export function SegmentRow({ segment, readOnly }: { segment: Segment; readOnly: 
 
       <div className="text-sm leading-relaxed mono whitespace-pre-wrap text-[color:var(--color-navy)]">
         {segment.source_text}
-        <div className="text-[10px] text-[color:var(--color-slate-400)] mt-1 font-sans">{segment.word_count} {segment.word_count === 1 ? "word" : "words"}</div>
+        <div className="flex items-center gap-2 text-[10px] mt-1 font-sans">
+          <span className="text-[color:var(--color-slate-400)]">{segment.word_count} {segment.word_count === 1 ? "word" : "words"}</span>
+          {topMatch && (
+            <span className={`px-1.5 py-0.5 rounded font-bold ${matchBadgeStyle(topMatch.score)}`} title={`From ${topMatch.tm_name ?? "TM"} · ${topMatch.kind}`}>
+              TM {Math.round(topMatch.score * 100)}%
+            </span>
+          )}
+          {!readOnly && (
+            <button type="button" onClick={loadMatches} className="text-[color:var(--color-teal-700)] hover:underline">
+              {matchesLoading ? "Searching…" : matches ? "Refresh matches" : "Find TM matches"}
+            </button>
+          )}
+        </div>
+
+        {/* Fuzzy match list (loaded on demand) */}
+        {matches && matches.length > 0 && (
+          <ul className="mt-2 space-y-1.5 font-sans">
+            {matches.map((m) => (
+              <li key={m.unit_id} className="rounded border border-[color:var(--color-border)] bg-[color:var(--color-slate-50)] p-2">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${matchBadgeStyle(m.score)}`}>
+                    {Math.round(m.score * 100)}%
+                  </span>
+                  {m.tm_name && <span className="text-[10px] text-[color:var(--color-slate-500)]">{m.tm_name}</span>}
+                  <span className="text-[10px] text-[color:var(--color-slate-500)] capitalize">· {m.kind}</span>
+                </div>
+                <div className="text-xs mono text-[color:var(--color-slate-700)]">{m.source_text}</div>
+                <div className="text-xs mono text-[color:var(--color-navy)] mt-0.5">{m.target_text}</div>
+                {!readOnly && (
+                  <div className="mt-1.5 flex gap-2">
+                    <button type="button" onClick={() => insertMatch(m, false)} className="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-white border border-[color:var(--color-slate-200)] hover:bg-[color:var(--color-slate-100)]">
+                      Insert
+                    </button>
+                    <button type="button" onClick={() => insertMatch(m, true)} className="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-[color:var(--color-emerald-600)] text-white hover:bg-[color:var(--color-emerald-700)]">
+                      Insert &amp; confirm
+                    </button>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        {matches && matches.length === 0 && (
+          <div className="mt-2 text-[10px] text-[color:var(--color-slate-500)] font-sans italic">No matches found in attached TMs.</div>
+        )}
       </div>
 
       <form action={submit} className="flex flex-col gap-2">
         <input type="hidden" name="segment_id" value={segment.id} />
         <textarea
           name="target_text"
-          defaultValue={target}
+          value={target}
           onChange={(e) => setTarget(e.target.value)}
           disabled={readOnly || isPending}
           placeholder={readOnly ? "(read-only)" : "Type translation…"}
@@ -89,6 +171,16 @@ export function SegmentRow({ segment, readOnly }: { segment: Segment; readOnly: 
               {!error && !savedAt && isPending && <span>Saving…</span>}
             </div>
             <div className="flex items-center gap-2">
+              {topMatch && (
+                <button
+                  type="button"
+                  onClick={() => insertMatch(topMatch, topMatch.score >= 1)}
+                  className="px-2 py-1 text-xs font-semibold rounded bg-[color:var(--color-bg-blue)] text-[color:var(--color-teal-700)] hover:bg-[color:var(--color-teal-100)]"
+                  title={topMatch.score >= 1 ? "Insert exact match and confirm" : "Insert top match"}
+                >
+                  Use TM {Math.round(topMatch.score * 100)}%
+                </button>
+              )}
               <button
                 type="submit"
                 disabled={isPending}

@@ -4,6 +4,7 @@ import { PageHeader, KpiCard } from "@/components/AppShell";
 import { getServiceClient } from "@/lib/supabase/server";
 import { requireRole } from "@/lib/auth/current-user";
 import { assignJobAction } from "./actions";
+import { attachTmToJobAction, detachTmFromJobAction } from "@/app/admin/tm/actions";
 
 export default async function JobDetail({
   params,
@@ -44,6 +45,23 @@ export default async function JobDetail({
     acc[s.status] = (acc[s.status] ?? 0) + 1;
     return acc;
   }, {});
+
+  // Attached TMs for this job + available TMs that match the language pair.
+  const { data: attachedTms } = await supabase
+    .from("job_resources")
+    .select("resource_id, priority, translation_memories!inner(id, name, source_lang, target_lang)")
+    .eq("job_id", jobId)
+    .eq("resource_type", "tm")
+    .order("priority", { ascending: true });
+
+  const attachedIds = new Set((attachedTms ?? []).map((r) => r.resource_id));
+  const { data: candidateTms } = await supabase
+    .from("translation_memories")
+    .select("id, name, source_lang, target_lang, scope")
+    .eq("source_lang", job.source_lang)
+    .eq("target_lang", job.target_lang)
+    .order("created_at", { ascending: false });
+  const availableTms = (candidateTms ?? []).filter((t) => !attachedIds.has(t.id));
 
   return (
     <>
@@ -104,6 +122,56 @@ export default async function JobDetail({
           <div className="text-xs text-[color:var(--color-slate-500)] mt-1">{job.source_format} · {job.source_storage_path}</div>
           <div className="text-xs text-[color:var(--color-slate-500)] mt-3">Created {new Date(job.created_at).toLocaleString()}</div>
         </div>
+      </div>
+
+      <div className="mt-6 bg-white rounded-xl border border-[color:var(--color-border)] p-5">
+        <div className="text-[10px] uppercase tracking-wider font-bold text-[color:var(--color-slate-500)] mb-3">Translation memories</div>
+
+        {(attachedTms ?? []).length === 0 ? (
+          <p className="text-sm text-[color:var(--color-slate-500)] mb-3">No TMs attached. The editor will run without leverage.</p>
+        ) : (
+          <ul className="space-y-1.5 mb-4">
+            {attachedTms!.map((r) => {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const tm = (r as any).translation_memories;
+              return (
+                <li key={r.resource_id} className="flex items-center justify-between rounded-md border border-[color:var(--color-border)] p-2">
+                  <div className="text-sm">
+                    <span className="font-semibold text-[color:var(--color-navy)]">{tm.name}</span>
+                    <span className="ml-2 text-[10px] text-[color:var(--color-slate-500)] mono uppercase">{tm.source_lang} → {tm.target_lang}</span>
+                    <span className="ml-2 text-[10px] text-[color:var(--color-slate-500)]">priority {r.priority}</span>
+                  </div>
+                  <form action={detachTmFromJobAction}>
+                    <input type="hidden" name="job_id" value={job.id} />
+                    <input type="hidden" name="tm_id" value={r.resource_id} />
+                    <button type="submit" className="text-xs font-semibold text-[color:var(--color-rose-600)] hover:underline">Detach</button>
+                  </form>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        {availableTms.length === 0 ? (
+          <p className="text-xs text-[color:var(--color-slate-500)]">No additional TMs available for this language pair. <Link href="/admin/tm/new" className="text-[color:var(--color-teal-700)] font-semibold hover:underline">Create one →</Link></p>
+        ) : (
+          <form action={attachTmToJobAction} className="flex items-end gap-2">
+            <input type="hidden" name="job_id" value={job.id} />
+            <div className="flex-1">
+              <label className="block text-[10px] uppercase tracking-wider font-bold text-[color:var(--color-slate-500)] mb-1">Attach TM</label>
+              <select name="tm_id" required className="w-full rounded-md border border-[color:var(--color-slate-200)] bg-white px-3 py-2 text-sm">
+                {availableTms.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name} ({t.scope})</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-[10px] uppercase tracking-wider font-bold text-[color:var(--color-slate-500)] mb-1">Priority</label>
+              <input type="number" name="priority" defaultValue={100} min={1} max={1000} className="w-24 rounded-md border border-[color:var(--color-slate-200)] bg-white px-3 py-2 text-sm" />
+            </div>
+            <button type="submit" className="px-3 py-2 text-sm font-semibold rounded-md bg-[color:var(--color-navy)] text-white">Attach</button>
+          </form>
+        )}
       </div>
     </>
   );
