@@ -91,6 +91,30 @@ const RULES: Record<string, RuleFn> = {
     ? [{ segment_id: seg.id, rule: "double_space", severity: "minor", message: "Target contains double spaces." }]
     : [],
 
+  tag_mismatch: (seg) => {
+    if (!seg.target_text.trim()) return [];
+    const ids = (s: string) => {
+      const set = new Set<number>();
+      const re = /\{(\d+)\}/g;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(s)) !== null) set.add(Number(m[1]));
+      return set;
+    };
+    const src = ids(seg.source_text);
+    if (src.size === 0) return [];
+    const tgt = ids(seg.target_text);
+    const missing = [...src].filter((x) => !tgt.has(x));
+    const extra = [...tgt].filter((x) => !src.has(x));
+    if (missing.length === 0 && extra.length === 0) return [];
+    const parts: string[] = [];
+    if (missing.length) parts.push(`missing: ${missing.map((n) => `{${n}}`).join(", ")}`);
+    if (extra.length) parts.push(`extra: ${extra.map((n) => `{${n}}`).join(", ")}`);
+    return [{
+      segment_id: seg.id, rule: "tag_mismatch", severity: "critical",
+      message: `Inline tags differ — ${parts.join("; ")}.`,
+    }];
+  },
+
   forbidden_term: (seg, _p, ctx) => {
     const hits = (ctx.forbiddenTermHits ?? []).filter((h) => h.segment_id === seg.id && h.target_status === "forbidden");
     if (hits.length === 0 || !seg.target_text) return [];

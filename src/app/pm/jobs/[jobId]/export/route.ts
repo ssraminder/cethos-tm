@@ -14,7 +14,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ jobI
 
   const { data: segments } = await supabase
     .from("segments")
-    .select("id, seq, source_text, target_text, status")
+    .select("id, seq, source_text, target_text, status, meta")
     .eq("job_id", jobId)
     .order("seq", { ascending: true });
 
@@ -23,13 +23,18 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ jobI
       source_lang: job.source_lang,
       target_lang: job.target_lang,
       original: job.source_filename || `${job.reference}.txt`,
-      segments: (segments ?? []).map((s) => ({
-        id: String(s.seq),
-        source_text: s.source_text,
-        target_text: s.target_text,
-        state: s.status === "translated" || s.status === "reviewed" ? "translated" : (s.target_text ? "needs-translation" : "new"),
-        approved: s.status === "reviewed",
-      })),
+      segments: (segments ?? []).map((s) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const tags = (s.meta as any)?.tags as Array<{ id: number; original_xml: string; kind: "open" | "close" | "empty" }> | undefined;
+        return {
+          id: String(s.seq),
+          source_text: s.source_text,
+          target_text: s.target_text,
+          state: s.status === "translated" || s.status === "reviewed" ? "translated" : (s.target_text ? "needs-translation" : "new"),
+          approved: s.status === "reviewed",
+          source_tags: tags,
+        };
+      }),
     });
     return new NextResponse(xml, {
       headers: {

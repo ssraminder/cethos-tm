@@ -56,6 +56,7 @@ export async function createJobFromBuffer(input: CreateJobInput): Promise<Create
   // Extract / segment.
   let segments: Segment[];
   let preTargets: Map<number, { text: string; status: "draft" | "translated" }> | null = null;
+  let segmentTags: Map<number, unknown[]> | null = null;
   let actualSource = input.source_lang;
   let actualTarget = input.target_lang;
 
@@ -67,6 +68,7 @@ export async function createJobFromBuffer(input: CreateJobInput): Promise<Create
     if (parsed.units.length === 0) throw new Error("XLIFF contained no translatable units.");
     segments = [];
     preTargets = new Map();
+    segmentTags = new Map();
     parsed.units.forEach((u, i) => {
       const seq = i + 1;
       const norm = u.source_text.normalize("NFC").replace(/\s+/g, " ").trim().toLowerCase();
@@ -80,6 +82,7 @@ export async function createJobFromBuffer(input: CreateJobInput): Promise<Create
         const isFinal = u.approved === true || u.state === "translated" || u.state === "final";
         preTargets!.set(seq, { text: u.target_text.trim(), status: isFinal ? "translated" : "draft" });
       }
+      if (u.source_tags && u.source_tags.length > 0) segmentTags!.set(seq, u.source_tags);
     });
   } else {
     const plain = await extractText(input.source_buffer, format);
@@ -132,6 +135,7 @@ export async function createJobFromBuffer(input: CreateJobInput): Promise<Create
 
   const rows = segments.map((s) => {
     const pre = preTargets?.get(s.seq);
+    const tags = segmentTags?.get(s.seq);
     return {
       job_id: jobId,
       seq: s.seq,
@@ -140,6 +144,7 @@ export async function createJobFromBuffer(input: CreateJobInput): Promise<Create
       word_count: s.word_count,
       target_text: pre?.text ?? "",
       status: pre?.status ?? "untranslated",
+      meta: tags ? { tags } : {},
     };
   });
   const CHUNK = 500;
