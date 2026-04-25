@@ -5,6 +5,7 @@ import { z } from "zod";
 import { getServiceClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { findMatchesForSegment, type TmMatch } from "@/lib/tm/match";
+import { translate, type MtSuggestion } from "@/lib/mt";
 
 const SaveSchema = z.object({
   segment_id: z.string().uuid(),
@@ -90,5 +91,43 @@ export async function findMatchesAction(input: { job_id: string; source_text: st
     return { ok: true, matches };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Match failed" };
+  }
+}
+
+export type MtResult = { ok: true; suggestion: MtSuggestion } | { ok: false; error: string };
+
+const MtSchema = z.object({ segment_id: z.string().uuid() });
+
+export async function getMtAction(input: { segment_id: string }): Promise<MtResult> {
+  const me = await getCurrentUser();
+  const parsed = MtSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Invalid input" };
+
+  const supabase = await getServiceClient();
+  const { data: seg } = await supabase
+    .from("segments")
+    .select("id, job_id, source_text, jobs!inner(assigned_to, reviewer_id, source_lang, target_lang)")
+    .eq("id", parsed.data!.segment_id)
+    .maybeSingle();
+  if (!seg) return { ok: false, error: "Segment not found" };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const job = (seg as any).jobs;
+  const ok = job.assigned_to === me.id || job.reviewer_id === me.id || me.role === "admin" || me.role === "pm";
+  if (!ok) return { ok: false, error: "Forbidden" };
+
+  try {
+    const suggestion = await translate({
+      source_text: seg.source_text,
+      source_lang: job.source_lang,
+      target_lang: job.target_lang,
+    });
+    // Persist on segment so the editor can show "MT used X%" and analytics can compute MT usage.
+    await supabase.from("segments").update({
+      mt_engine: suggestion.engine,
+      mt_suggestion: suggestion.target_text,
+    }).eq("id", parsed.data!.segment_id);
+    return { ok: true, suggestion };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "MT failed" };
   }
 }

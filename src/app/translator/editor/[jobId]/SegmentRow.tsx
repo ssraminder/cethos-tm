@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useTransition, type ReactNode } from "react";
-import { saveSegmentAction, findMatchesAction } from "./actions";
+import { saveSegmentAction, findMatchesAction, getMtAction } from "./actions";
 import type { TmMatch } from "@/lib/tm/match";
 import type { TermHit } from "@/lib/termbase/hits";
+import type { MtSuggestion } from "@/lib/mt";
 
 interface Segment {
   id: string;
@@ -52,6 +53,8 @@ export function SegmentRow({
   const [active, setActive] = useState(false);
   const [matches, setMatches] = useState<TmMatch[] | null>(null);
   const [matchesLoading, setMatchesLoading] = useState(false);
+  const [mt, setMt] = useState<MtSuggestion | null>(null);
+  const [mtLoading, setMtLoading] = useState(false);
 
   function submit(formData: FormData) {
     startTransition(async () => {
@@ -74,6 +77,25 @@ export function SegmentRow({
     setMatchesLoading(false);
     if (res.ok) setMatches(res.matches);
     else setError(res.error);
+  }
+
+  async function loadMt() {
+    setMtLoading(true);
+    const res = await getMtAction({ segment_id: segment.id });
+    setMtLoading(false);
+    if (res.ok) setMt(res.suggestion);
+    else setError(res.error);
+  }
+
+  function insertMt(andConfirm = false) {
+    if (!mt) return;
+    setTarget(mt.target_text);
+    if (readOnly) return;
+    const fd = new FormData();
+    fd.append("segment_id", segment.id);
+    fd.append("target_text", mt.target_text);
+    if (andConfirm) fd.append("confirm", "1");
+    submit(fd);
   }
 
   function insertMatch(m: TmMatch, andConfirm = false) {
@@ -134,9 +156,14 @@ export function SegmentRow({
             </span>
           )}
           {!readOnly && (
-            <button type="button" onClick={loadMatches} className="text-[color:var(--color-teal-700)] hover:underline">
-              {matchesLoading ? "Searching…" : matches ? "Refresh matches" : "Find TM matches"}
-            </button>
+            <>
+              <button type="button" onClick={loadMatches} className="text-[color:var(--color-teal-700)] hover:underline">
+                {matchesLoading ? "Searching…" : matches ? "Refresh matches" : "Find TM matches"}
+              </button>
+              <button type="button" onClick={loadMt} className="text-[color:var(--color-purple-600)] hover:underline">
+                {mtLoading ? "MT…" : mt ? "Re-run MT" : "Get MT"}
+              </button>
+            </>
           )}
         </div>
 
@@ -170,6 +197,23 @@ export function SegmentRow({
         )}
         {matches && matches.length === 0 && (
           <div className="mt-2 text-[10px] text-[color:var(--color-slate-500)] font-sans italic">No matches found in attached TMs.</div>
+        )}
+
+        {mt && (
+          <div className="mt-2 rounded border border-[color:var(--color-purple-100)] bg-[color:var(--color-purple-100)]/40 p-2 font-sans">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-[color:var(--color-purple-500)] text-white uppercase">{mt.engine}</span>
+              <span className="text-[10px] text-[color:var(--color-slate-500)]">Machine translation</span>
+            </div>
+            <div className="text-xs mono text-[color:var(--color-navy)]">{mt.target_text}</div>
+            {mt.warning && <div className="text-[10px] text-[color:var(--color-amber-600)] mt-1 italic">{mt.warning}</div>}
+            {!readOnly && (
+              <div className="mt-1.5 flex gap-2">
+                <button type="button" onClick={() => insertMt(false)} className="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-white border border-[color:var(--color-slate-200)]">Insert</button>
+                <button type="button" onClick={() => insertMt(true)} className="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-[color:var(--color-emerald-600)] text-white">Insert &amp; confirm</button>
+              </div>
+            )}
+          </div>
         )}
       </div>
 
