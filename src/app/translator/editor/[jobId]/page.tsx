@@ -3,7 +3,9 @@ import { notFound } from "next/navigation";
 import { getServiceClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { getExactMatchesForJob } from "@/lib/tm/match";
+import { getTermHitsForJob } from "@/lib/termbase/hits";
 import { SegmentRow } from "./SegmentRow";
+import { HighlightedSource } from "./HighlightedSource";
 
 export default async function EditorPage({
   params,
@@ -49,14 +51,24 @@ export default async function EditorPage({
   }
   const pct = counts.total > 0 ? Math.round((counts.confirmed / counts.total) * 100) : 0;
 
-  // Pre-compute exact TM matches for the visible segments (single round-trip).
-  const exactMatches = await getExactMatchesForJob(jobId);
+  // Pre-compute leverage data in two parallel round-trips.
+  const [exactMatches, termHits] = await Promise.all([
+    getExactMatchesForJob(jobId),
+    getTermHitsForJob(jobId),
+  ]);
 
   const { data: attachedTms } = await supabase
     .from("job_resources")
     .select("resource_id, priority, translation_memories!inner(name, source_lang, target_lang)")
     .eq("job_id", jobId)
     .eq("resource_type", "tm")
+    .order("priority", { ascending: true });
+
+  const { data: attachedTbs } = await supabase
+    .from("job_resources")
+    .select("resource_id, priority, termbases!inner(name, languages)")
+    .eq("job_id", jobId)
+    .eq("resource_type", "termbase")
     .order("priority", { ascending: true });
 
   return (
@@ -121,15 +133,20 @@ export default async function EditorPage({
                 <div>Source</div>
                 <div>Target</div>
               </div>
-              {(segments ?? []).map((s) => (
-                <SegmentRow
-                  key={s.id}
-                  segment={s as never}
-                  readOnly={readOnly}
-                  jobId={jobId}
-                  topMatch={exactMatches.get(s.id) ?? null}
-                />
-              ))}
+              {(segments ?? []).map((s) => {
+                const hits = termHits.get(s.id) ?? [];
+                return (
+                  <SegmentRow
+                    key={s.id}
+                    segment={s as never}
+                    readOnly={readOnly}
+                    jobId={jobId}
+                    topMatch={exactMatches.get(s.id) ?? null}
+                    termHits={hits}
+                    highlightedSource={<HighlightedSource source={s.source_text} hits={hits} />}
+                  />
+                );
+              })}
             </div>
           )}
         </div>
@@ -159,7 +176,27 @@ export default async function EditorPage({
             </ul>
           )}
 
-          <div className="mt-6 text-[10px] uppercase tracking-wider font-bold text-[color:var(--color-slate-500)] mb-2">Job</div>
+          <div className="mt-6 text-[10px] uppercase tracking-wider font-bold text-[color:var(--color-slate-500)] mb-2">Attached termbases</div>
+          {!attachedTbs || attachedTbs.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-[color:var(--color-border)] p-3 text-xs text-[color:var(--color-slate-500)] mb-4">
+              No termbases attached.
+            </div>
+          ) : (
+            <ul className="space-y-1.5 mb-4">
+              {attachedTbs.map((r) => {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const tb = (r as any).termbases;
+                return (
+                  <li key={r.resource_id} className="rounded-md border border-[color:var(--color-border)] p-2 text-sm">
+                    <div className="font-semibold text-[color:var(--color-navy)] truncate">{tb.name}</div>
+                    <div className="text-[10px] text-[color:var(--color-slate-500)] mono">{(tb.languages ?? []).join(", ")}</div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+
+          <div className="text-[10px] uppercase tracking-wider font-bold text-[color:var(--color-slate-500)] mb-2">Job</div>
           <div className="text-sm space-y-1">
             <div className="flex justify-between"><span className="text-[color:var(--color-slate-500)]">Status</span><span className="capitalize">{job.status.replace("_", " ")}</span></div>
             <div className="flex justify-between"><span className="text-[color:var(--color-slate-500)]">Words</span><span>{job.word_count.toLocaleString()}</span></div>

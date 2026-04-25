@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, type ReactNode } from "react";
 import { saveSegmentAction, findMatchesAction } from "./actions";
 import type { TmMatch } from "@/lib/tm/match";
+import type { TermHit } from "@/lib/termbase/hits";
 
 interface Segment {
   id: string;
@@ -33,11 +34,15 @@ export function SegmentRow({
   readOnly,
   jobId,
   topMatch,
+  termHits,
+  highlightedSource,
 }: {
   segment: Segment;
   readOnly: boolean;
   jobId: string;
   topMatch: TmMatch | null;
+  termHits: TermHit[];
+  highlightedSource: ReactNode;
 }) {
   const [target, setTarget] = useState(segment.target_text);
   const [status, setStatus] = useState(segment.status);
@@ -100,7 +105,27 @@ export function SegmentRow({
       </div>
 
       <div className="text-sm leading-relaxed mono whitespace-pre-wrap text-[color:var(--color-navy)]">
-        {segment.source_text}
+        {highlightedSource}
+        {termHits.length > 0 && (
+          <ul className="mt-1.5 flex flex-wrap gap-1 font-sans">
+            {termHits.slice(0, 5).map((h, i) => (
+              <li
+                key={`${h.concept_id}-${i}`}
+                className={[
+                  "text-[10px] px-1.5 py-0.5 rounded border",
+                  h.target_status === "forbidden"
+                    ? "border-[color:var(--color-rose-200)] bg-[color:var(--color-rose-50)] text-[color:var(--color-rose-600)]"
+                    : "border-[color:var(--color-teal-100)] bg-[color:var(--color-teal-50)] text-[color:var(--color-teal-700)]",
+                ].join(" ")}
+                title={`${h.source_term} → ${h.target_term}`}
+              >
+                <span className="font-bold">{h.source_term}</span>
+                {" → "}
+                <span className={h.target_status === "forbidden" ? "line-through" : "font-semibold"}>{h.target_term}</span>
+              </li>
+            ))}
+          </ul>
+        )}
         <div className="flex items-center gap-2 text-[10px] mt-1 font-sans">
           <span className="text-[color:var(--color-slate-400)]">{segment.word_count} {segment.word_count === 1 ? "word" : "words"}</span>
           {topMatch && (

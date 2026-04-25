@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<martif type="TBX-Basic" xml:lang="en">
+  <martifHeader>
+    <fileDesc>
+      <sourceDesc><p>Cethos smoke termbase</p></sourceDesc>
+    </fileDesc>
+  </martifHeader>
+  <text>
+    <body>
+      <termEntry id="c1">
+        <descrip type="domain">marketing</descrip>
+        <langSet xml:lang="en-US">
+          <tig><term>customer</term></tig>
+        </langSet>
+        <langSet xml:lang="fr-FR">
+          <tig><term>client</term></tig>
+        </langSet>
+      </termEntry>
+      <termEntry id="c2">
+        <descrip type="domain">brand</descrip>
+        <langSet xml:lang="en-US">
+          <tig><term>Acme</term></tig>
+        </langSet>
+        <langSet xml:lang="fr-FR">
+          <tig><term>Acme</term></tig>
+        </langSet>
+      </termEntry>
+      <termEntry id="c3">
+        <descrip type="definition">Avoid as it conflicts with brand voice</descrip>
+        <langSet xml:lang="en-US">
+          <tig>
+            <term>cheap</term>
+            <admin type="termType">deprecated</admin>
+          </tig>
+        </langSet>
+        <langSet xml:lang="fr-FR">
+          <tig>
+            <term>bon marché</term>
+            <admin type="termType">forbidden</admin>
+          </tig>
+        </langSet>
+      </termEntry>
+    </body>
+  </text>
+</martif>

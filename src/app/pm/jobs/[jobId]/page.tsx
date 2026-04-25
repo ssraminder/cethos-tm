@@ -5,6 +5,7 @@ import { getServiceClient } from "@/lib/supabase/server";
 import { requireRole } from "@/lib/auth/current-user";
 import { assignJobAction } from "./actions";
 import { attachTmToJobAction, detachTmFromJobAction } from "@/app/admin/tm/actions";
+import { attachTermbaseToJobAction, detachTermbaseFromJobAction } from "@/app/admin/termbases/actions";
 
 export default async function JobDetail({
   params,
@@ -62,6 +63,20 @@ export default async function JobDetail({
     .eq("target_lang", job.target_lang)
     .order("created_at", { ascending: false });
   const availableTms = (candidateTms ?? []).filter((t) => !attachedIds.has(t.id));
+
+  // Termbases that include both job languages
+  const { data: attachedTbs } = await supabase
+    .from("job_resources")
+    .select("resource_id, priority, termbases!inner(id, name, languages)")
+    .eq("job_id", jobId)
+    .eq("resource_type", "termbase")
+    .order("priority", { ascending: true });
+  const attachedTbIds = new Set((attachedTbs ?? []).map((r) => r.resource_id));
+  const { data: allTbs } = await supabase.from("termbases").select("id, name, languages, scope");
+  const availableTbs = (allTbs ?? []).filter((t) => {
+    const langs = t.languages ?? [];
+    return langs.includes(job.source_lang) && langs.includes(job.target_lang) && !attachedTbIds.has(t.id);
+  });
 
   return (
     <>
@@ -163,6 +178,53 @@ export default async function JobDetail({
                 {availableTms.map((t) => (
                   <option key={t.id} value={t.id}>{t.name} ({t.scope})</option>
                 ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-[10px] uppercase tracking-wider font-bold text-[color:var(--color-slate-500)] mb-1">Priority</label>
+              <input type="number" name="priority" defaultValue={100} min={1} max={1000} className="w-24 rounded-md border border-[color:var(--color-slate-200)] bg-white px-3 py-2 text-sm" />
+            </div>
+            <button type="submit" className="px-3 py-2 text-sm font-semibold rounded-md bg-[color:var(--color-navy)] text-white">Attach</button>
+          </form>
+        )}
+      </div>
+
+      <div className="mt-4 bg-white rounded-xl border border-[color:var(--color-border)] p-5">
+        <div className="text-[10px] uppercase tracking-wider font-bold text-[color:var(--color-slate-500)] mb-3">Termbases</div>
+
+        {(attachedTbs ?? []).length === 0 ? (
+          <p className="text-sm text-[color:var(--color-slate-500)] mb-3">No termbases attached.</p>
+        ) : (
+          <ul className="space-y-1.5 mb-4">
+            {attachedTbs!.map((r) => {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const tb = (r as any).termbases;
+              return (
+                <li key={r.resource_id} className="flex items-center justify-between rounded-md border border-[color:var(--color-border)] p-2">
+                  <div className="text-sm">
+                    <span className="font-semibold text-[color:var(--color-navy)]">{tb.name}</span>
+                    <span className="ml-2 text-[10px] text-[color:var(--color-slate-500)] mono uppercase">{(tb.languages ?? []).join(", ")}</span>
+                  </div>
+                  <form action={detachTermbaseFromJobAction}>
+                    <input type="hidden" name="job_id" value={job.id} />
+                    <input type="hidden" name="tb_id" value={r.resource_id} />
+                    <button type="submit" className="text-xs font-semibold text-[color:var(--color-rose-600)] hover:underline">Detach</button>
+                  </form>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        {availableTbs.length === 0 ? (
+          <p className="text-xs text-[color:var(--color-slate-500)]">No termbases cover this pair. <Link href="/admin/termbases/new" className="text-[color:var(--color-teal-700)] font-semibold hover:underline">Create one →</Link></p>
+        ) : (
+          <form action={attachTermbaseToJobAction} className="flex items-end gap-2">
+            <input type="hidden" name="job_id" value={job.id} />
+            <div className="flex-1">
+              <label className="block text-[10px] uppercase tracking-wider font-bold text-[color:var(--color-slate-500)] mb-1">Attach termbase</label>
+              <select name="tb_id" required className="w-full rounded-md border border-[color:var(--color-slate-200)] bg-white px-3 py-2 text-sm">
+                {availableTbs.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.scope})</option>)}
               </select>
             </div>
             <div>
