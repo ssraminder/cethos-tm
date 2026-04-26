@@ -23,7 +23,7 @@ export default async function JobDetail({
   const supabase = await getServiceClient();
   const { data: job } = await supabase
     .from("jobs")
-    .select("*")
+    .select("*, projects(id, name, reference)")
     .eq("id", jobId)
     .maybeSingle();
   if (!job) notFound();
@@ -32,12 +32,28 @@ export default async function JobDetail({
     ? await supabase.from("profiles").select("full_name, email").eq("id", job.assigned_to).maybeSingle()
     : { data: null };
 
-  const { data: translators } = await supabase
-    .from("profiles")
-    .select("id, full_name, email")
-    .in("role", ["translator", "reviewer"])
-    .eq("status", "active")
-    .order("full_name");
+  // If this job belongs to a project with a vendor pool, narrow the dropdown.
+  let translators: Array<{ id: string; full_name: string | null; email: string }> = [];
+  if (job.project_id) {
+    const { data: pv } = await supabase
+      .from("project_vendors")
+      .select("profiles!inner(id, full_name, email, role, status)")
+      .eq("project_id", job.project_id);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const pool = (pv ?? []).map((r) => (r as any).profiles).filter((p: { status: string }) => p.status === "active");
+    if (pool.length > 0) {
+      translators = pool;
+    }
+  }
+  if (translators.length === 0) {
+    const { data: all } = await supabase
+      .from("profiles")
+      .select("id, full_name, email")
+      .in("role", ["translator", "reviewer"])
+      .eq("status", "active")
+      .order("full_name");
+    translators = all ?? [];
+  }
 
   const { data: stats } = await supabase
     .from("segments")
@@ -96,7 +112,7 @@ export default async function JobDetail({
     <>
       <PageHeader
         title={`Job ${job.reference}`}
-        subtitle={`${job.source_lang} → ${job.target_lang} · ${job.word_count.toLocaleString()} words · ${job.segment_count} segments`}
+        subtitle={`${(job as { projects?: { name: string } | null }).projects?.name ? `${(job as { projects?: { name: string } | null }).projects?.name} · ` : ""}${job.source_lang} → ${job.target_lang} · ${job.word_count.toLocaleString()} words · ${job.segment_count} segments`}
         actions={
           <div className="flex items-center gap-3">
             <RealtimeJobStatus jobId={job.id} />

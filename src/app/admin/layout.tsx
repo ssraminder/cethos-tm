@@ -4,6 +4,7 @@ import { requireRole } from "@/lib/auth/current-user";
 
 const navItems: Omit<NavItem, "active">[] = [
   { label: "Dashboard",          href: "/admin" },
+  { label: "Projects",           href: "/admin/projects" },
   { label: "Translation Memory", href: "/admin/tm" },
   { label: "Termbases",          href: "/admin/termbases" },
   { label: "QA Profiles",        href: "/admin/qa" },

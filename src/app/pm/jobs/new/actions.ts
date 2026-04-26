@@ -18,6 +18,7 @@ const Schema = z.object({
   reference: z.string().max(64).optional(),
   assigned_to: z.string().uuid().optional().or(z.literal("")),
   deadline: z.string().optional(),
+  project_id: z.string().uuid().optional().or(z.literal("")),
 });
 
 const STORAGE_BUCKET = "cat-source-files";
@@ -31,11 +32,12 @@ export async function createJobFromUploadAction(formData: FormData): Promise<voi
     reference: formData.get("reference") || undefined,
     assigned_to: formData.get("assigned_to") || undefined,
     deadline: formData.get("deadline") || undefined,
+    project_id: formData.get("project_id") || undefined,
   });
   if (!parsed.success) {
     redirect(`/pm/jobs/new?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid input")}`);
   }
-  const { source_lang, target_lang, reference: refOverride, assigned_to, deadline } = parsed.data!;
+  const { source_lang, target_lang, reference: refOverride, assigned_to, deadline, project_id } = parsed.data!;
   if (source_lang === target_lang) {
     redirect(`/pm/jobs/new?error=${encodeURIComponent("Source and target languages must differ.")}`);
   }
@@ -114,6 +116,36 @@ export async function createJobFromUploadAction(formData: FormData): Promise<voi
   const service = await getServiceClient();
   const supabase = await getServerClient();
 
+  // If a project was specified, validate it: PM must be able to manage it,
+  // and if the project has a vendor pool, the assigned translator must be in it.
+  let resolvedProjectId: string | null = null;
+  if (project_id) {
+    if (me.role !== "admin") {
+      const { data: canManage } = await service.rpc("can_manage_project", { p_project_id: project_id });
+      if (!canManage) {
+        redirect(`/pm/jobs/new?error=${encodeURIComponent("You don't have access to that project.")}`);
+      }
+    }
+    if (assigned_to) {
+      const { count: poolSize } = await service
+        .from("project_vendors")
+        .select("*", { count: "exact", head: true })
+        .eq("project_id", project_id);
+      if ((poolSize ?? 0) > 0) {
+        const { data: inPool } = await service
+          .from("project_vendors")
+          .select("vendor_id")
+          .eq("project_id", project_id)
+          .eq("vendor_id", assigned_to)
+          .maybeSingle();
+        if (!inPool) {
+          redirect(`/pm/jobs/new?project=${project_id}&error=${encodeURIComponent("Selected translator isn't in the project's vendor pool.")}`);
+        }
+      }
+    }
+    resolvedProjectId = project_id;
+  }
+
   // 1) Create job row first to get a job_id for the storage path.
   const reference = (refOverride && refOverride.trim()) || generateJobReference();
   const jobInsert = {
@@ -129,6 +161,7 @@ export async function createJobFromUploadAction(formData: FormData): Promise<voi
     created_by: me.id,
     assigned_to: assigned_to || null,
     deadline: deadline || null,
+    project_id: resolvedProjectId,
   };
   const { data: job, error: jobErr } = await service
     .from("jobs")
