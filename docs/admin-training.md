@@ -40,6 +40,9 @@ Open `https://your-cethos-cat.example.com/sign-in` (in dev: `http://localhost:30
 2. We email a 6-digit verification code (OTP) to your inbox via Mailgun.
    The default sender domain is `reply.cethos.com`.
 3. On the next screen, type the code. It expires in 10 minutes.
+
+   ![OTP verify page](screenshots/admin/01b-verify.png)
+
 4. You'll land on the admin dashboard.
 
 If you forget your password, click **Forgot password?**. We send a Supabase
@@ -49,6 +52,25 @@ where you set a new password (minimum 12 characters).
 > Translators usually arrive via a job link from the vendor portal; that flow
 > bypasses the password screen entirely. Admin/PM accounts always go through
 > password + OTP.
+
+### Stuck without an inbox? Use a known OTP
+
+If your email domain isn't yet wired to receive Mailgun mail (e.g.,
+`@cethos.com` while the MX records are still propagating), you can issue a
+fixed-value OTP from the server side:
+
+```bash
+# After clicking Sign in and landing on /verify, run:
+node scripts/issue-test-otp.cjs raminder@cethos.com 111111
+```
+
+The script invalidates whatever OTP the password step issued and inserts a
+new one with the plaintext code you specify (10-min expiry). Type the same
+code on `/verify` and you're in.
+
+> Order matters: the `signInAction` invalidates any pending OTP and issues a
+> new one when you submit the password. So **press Sign in first**, then run
+> the script to overwrite the OTP with a value you know.
 
 ---
 
