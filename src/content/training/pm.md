@@ -11,13 +11,14 @@ keep jobs flowing, watch deadlines, and step in when QA finds something.
 1. [Signing in](#signing-in)
 2. [The PM shell](#the-pm-shell)
 3. [Dashboard](#dashboard)
-4. [Jobs list](#jobs-list)
-5. [Job detail — the workhorse page](#job-detail--the-workhorse-page)
-6. [Creating a job manually](#creating-a-job-manually)
-7. [Translators](#translators)
-8. [Concordance](#concordance)
-9. [Reports](#reports)
-10. [Common workflows](#common-workflows)
+4. [Projects](#projects)
+5. [Jobs list](#jobs-list)
+6. [Job detail — the workhorse page](#job-detail--the-workhorse-page)
+7. [Creating a job manually](#creating-a-job-manually)
+8. [Translators](#translators)
+9. [Concordance](#concordance)
+10. [Reports](#reports)
+11. [Common workflows](#common-workflows)
 
 ---
 
@@ -60,6 +61,40 @@ Two panels below:
 
 KPIs and panels populate as jobs flow through the editor. On a fresh install
 you'll see em-dashes (`—`) until the first job moves.
+
+---
+
+## Projects
+
+`/pm/projects`
+
+A project groups related jobs (e.g., one client initiative across multiple
+language pairs). Two paths to a project on your dashboard:
+
+1. An **admin assigned you explicitly** — you'll see it labelled "You" in the
+   Assignment column.
+2. The project has **no explicit PM assignment** — visible to all PMs by
+   default, labelled "Open to all PMs".
+
+![Projects list](/training/pm/08-projects-list.png)
+
+### Project detail
+
+`/pm/projects/[id]`
+
+![Project detail](/training/pm/09-projects-detail.png)
+
+You can edit project metadata (name, reference, status, client, deadline,
+description) and manage the **vendor pool** (the pre-approved set of
+translators/reviewers who can be assigned to jobs in this project).
+
+> **PM rosters are admin-only.** If a project shouldn't be visible to a
+> particular PM, ask an admin to add explicit assignments — once any PM is
+> assigned, the project switches from "open to all" to "explicit-list-only".
+
+The **`+ New job in this project`** button opens the create-job page with
+this project pre-selected and the translator dropdown narrowed to the
+vendor pool (if defined).
 
 ---
 
