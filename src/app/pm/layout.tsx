@@ -9,6 +9,7 @@ const navItems: Omit<NavItem, "active">[] = [
   { label: "Translators",  href: "/pm/translators" },
   { label: "Concordance",  href: "/pm/concordance" },
   { label: "Reports",      href: "/pm/reports" },
+  { label: "Training",     href: "/pm/training" },
 ];
 
 export default async function PmLayout({ children }: { children: React.ReactNode }) {
