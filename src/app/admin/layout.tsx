@@ -13,6 +13,7 @@ const navItems: Omit<NavItem, "active">[] = [
   { label: "Integrations",       href: "/admin/integrations" },
   { label: "Audit Log",          href: "/admin/audit" },
   { label: "Settings",           href: "/admin/settings" },
+  { label: "Training",           href: "/admin/training" },
 ];
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {

@@ -6,6 +6,7 @@ const navItems: Omit<NavItem, "active">[] = [
   { label: "Inbox",       href: "/translator" },
   { label: "Concordance", href: "/translator/concordance" },
   { label: "Profile",     href: "/translator/profile" },
+  { label: "Training",    href: "/translator/training" },
 ];
 
 export default async function TranslatorLayout({ children }: { children: React.ReactNode }) {
