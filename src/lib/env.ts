@@ -32,4 +32,10 @@ export const env = {
     audience: opt(process.env.VENDOR_PORTAL_JWT_AUDIENCE, "cethos-cat"),
     jwksUrl: opt(process.env.VENDOR_PORTAL_JWKS_URL),
   },
+  // Shared admin/vendor-portal Supabase backend — read-only source for
+  // clients and vendors. Service role key required for admin-only tables.
+  portal: {
+    url: opt(process.env.PORTAL_SUPABASE_URL),
+    serviceRoleKey: opt(process.env.PORTAL_SUPABASE_SERVICE_ROLE_KEY),
+  },
 };
