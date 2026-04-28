@@ -15,19 +15,15 @@
  *
  * Behaviour:
  *   - If a profile already exists for this email → return its id + email.
- *     `applicant_password` is omitted (caller already has it from a prior
- *     call; if they don't, the vendor changes it from /profile).
- *   - If no profile yet → mint a fresh auth user with a random 16+char
- *     password, insert profile (role=translator, mfa_required=false so the
- *     V3-emailed password works without an OTP gate), return everything
- *     the caller needs to email the vendor.
+ *   - If no profile yet → mint a fresh auth user with a random throwaway
+ *     password (never used — sign-in is by email OTP only), insert profile
+ *     (role=translator, mfa_required=true so the OTP gate fires).
  *
  * Response:
  *   {
  *     idempotent: boolean,         // true if profile already existed
  *     user_id: string,
- *     applicant_email: string,
- *     applicant_password?: string  // only present when idempotent=false
+ *     applicant_email: string
  *   }
  *
  * Failures: write to tm_errors and clean up partial state (delete auth user
@@ -54,12 +50,12 @@ function bearer(req: NextRequest): string | null {
 }
 
 /**
- * 16+ char password mixing hex + a fixed mixed-class suffix.
- * The vendor receives this in their V3 invitation and can change it from
- * /profile in TM. Mixed classes satisfy any UI password-strength hint.
+ * Throwaway password for the Supabase auth user. Never shown to the vendor —
+ * sign-in is email OTP only via /sign-in → /verify. Supabase Auth requires
+ * a non-null password column, so we set a strong random one and forget it.
  */
-function generatePassword(): string {
-  return `${randomBytes(8).toString("hex")}Aa1!`;
+function generateThrowawayPassword(): string {
+  return `${randomBytes(16).toString("hex")}Aa1!`;
 }
 
 export async function POST(req: NextRequest) {
@@ -109,8 +105,8 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 2. Mint a fresh auth user.
-  const password = generatePassword();
+  // 2. Mint a fresh auth user with a throwaway password (never surfaced).
+  const password = generateThrowawayPassword();
   let userId: string;
   try {
     const { data: created, error: createErr } =
@@ -143,9 +139,8 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 3. Insert profile. mfa_required=false so the password we email works
-  //    without an OTP gate (the @cethos.test test accounts had this same
-  //    setup; real vendor emails could optionally re-enable MFA later).
+  // 3. Insert profile. mfa_required=true so /verify always issues an OTP —
+  //    that's now the sole sign-in factor (no password ever exchanged).
   try {
     const { error: profileErr } = await supabase.from("profiles").insert({
       id: userId,
@@ -154,7 +149,7 @@ export async function POST(req: NextRequest) {
       role: "translator",
       status: "active",
       auth_source: "vendor_portal_sso",
-      mfa_required: false,
+      mfa_required: true,
       meta: {
         vendor_account: true,
         provisioned_at: new Date().toISOString(),
@@ -186,7 +181,6 @@ export async function POST(req: NextRequest) {
       idempotent: false,
       user_id: userId,
       applicant_email,
-      applicant_password: password,
     },
     { status: 201 },
   );

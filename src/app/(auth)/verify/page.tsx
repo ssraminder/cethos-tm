@@ -1,5 +1,4 @@
 import { redirect } from "next/navigation";
-import { getServerClient } from "@/lib/supabase/server";
 import { verifyAction, resendAction } from "./actions";
 
 export default async function VerifyPage({
@@ -8,11 +7,11 @@ export default async function VerifyPage({
   searchParams: Promise<{ email?: string; error?: string; next?: string; resent?: string }>;
 }) {
   const sp = await searchParams;
-  const supabase = await getServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/sign-in");
-
-  const email = sp.email || user.email || "";
+  // OTP-only flow: no Supabase session exists at this point — it gets minted
+  // after successful OTP verification. The page just renders the code form.
+  // Bounce to /sign-in only if we somehow got here without an email param.
+  if (!sp.email) redirect("/sign-in");
+  const email = sp.email;
   const masked = email.replace(/(.).*(@.*)/, "$1***$2");
 
   return (

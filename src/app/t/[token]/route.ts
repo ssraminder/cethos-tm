@@ -166,10 +166,12 @@ export async function GET(
 
   // 5. Verify the OTP server-side. On success, the SSR client writes the
   //    session cookies to `res` via cookieMethods.setAll above.
+  // NOTE: Supabase's verifyOtp accepts EITHER {email, token} OR
+  // {token_hash, type} — passing both is rejected with "Only the
+  // token_hash and type should be provided". Use the token_hash form.
   const { error: verifyErr } = await ssrClient.auth.verifyOtp({
     type: "magiclink",
     token_hash: hashedToken,
-    email: p.email,
   });
   if (verifyErr) {
     await logTmError({
