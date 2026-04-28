@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState, useTransition, type ReactNode } from "react";
-import { saveSegmentAction, findMatchesAction, getMtAction } from "./actions";
+import { saveSegmentAction, getMtAction } from "./actions";
 import type { TmMatch } from "@/lib/tm/match";
 import type { TermHit } from "@/lib/termbase/hits";
 import type { MtSuggestion } from "@/lib/mt";
+import { TM_INSERT_EVENT } from "./BottomMatchPanel";
 
 interface Segment {
   id: string;
@@ -163,6 +164,7 @@ export function SegmentRow({
   highlightedSource,
   qaFindings,
   showMt,
+  onActivate,
 }: {
   segment: Segment;
   readOnly: boolean;
@@ -178,6 +180,11 @@ export function SegmentRow({
    * at job-creation time.
    */
   showMt: boolean;
+  /**
+   * Called when this row becomes the focused/active segment (focus or click).
+   * The wrapper uses this to drive the BottomMatchPanel's lookup.
+   */
+  onActivate?: (segment: { id: string; source_text: string }) => void;
 }) {
   const [target, setTarget] = useState(segment.target_text);
   const [status, setStatus] = useState(segment.status);
@@ -185,8 +192,6 @@ export function SegmentRow({
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [active, setActive] = useState(false);
-  const [matches, setMatches] = useState<TmMatch[] | null>(null);
-  const [matchesLoading, setMatchesLoading] = useState(false);
   const [mt, setMt] = useState<MtSuggestion | null>(null);
   const [mtLoading, setMtLoading] = useState(false);
   // Provenance of the current target_text. Updates as the translator
@@ -237,37 +242,11 @@ export function SegmentRow({
     setPristine({ text: segment.source_text, origin: "copied_source" });
   }
 
-  async function loadMatches() {
-    setMatchesLoading(true);
-    const res = await findMatchesAction({ job_id: jobId, source_text: segment.source_text });
-    setMatchesLoading(false);
-    if (res.ok) setMatches(res.matches);
-    else setError(res.error);
-  }
-
-  // Auto-load fuzzy matches once on mount so the translator doesn't have
-  // to click "Find TM matches" per row. The page-load topMatch covers the
-  // ≥1.0 exact case; this fills in everything below 1.0.
-  //
-  // Side effect: if a 100% match exists AND target is empty AND we're not
-  // read-only, auto-populate the target cell with the exact match. The
-  // translator can edit or hit Confirm directly. Fuzzy matches only
-  // populate the panel — translator still has to click Insert to use them.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const res = await findMatchesAction({ job_id: jobId, source_text: segment.source_text });
-      if (cancelled) return;
-      if (res.ok) setMatches(res.matches);
-    })();
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [jobId, segment.id]);
-
   // Auto-insert a 100% TM match into the target if the target is empty.
-  // We rely on `topMatch` from page-load (it's the top-scored exact match
-  // for this segment). Only triggers when (a) score >= 1.0, (b) the
-  // textarea is currently empty, (c) the row isn't read-only.
+  // The page-load topMatch is the top-scored exact match for this segment.
+  // Only triggers when (a) score >= 1.0, (b) the textarea is currently
+  // empty, (c) the row isn't read-only. Fuzzy matches don't auto-insert —
+  // they show in the bottom split panel and the translator clicks Insert.
   useEffect(() => {
     if (readOnly) return;
     if (!topMatch || topMatch.score < 1) return;
@@ -275,10 +254,27 @@ export function SegmentRow({
     setTarget(topMatch.target_text);
     setOrigin("tm");
     setPristine({ text: topMatch.target_text, origin: "tm" });
-    // Don't auto-confirm — translator reviews and clicks Confirm. Don't
-    // persist to DB either — the next Save/Confirm covers that.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Listen for "insert this match" events from the BottomMatchPanel.
+  // The bottom panel is decoupled from individual SegmentRow refs; it
+  // dispatches a window CustomEvent with the active segment id + the
+  // chosen match. We pick up only events that target our segment.
+  useEffect(() => {
+    function handler(e: Event) {
+      const detail = (e as CustomEvent<{
+        segmentId: string;
+        match: TmMatch;
+        andConfirm: boolean;
+      }>).detail;
+      if (!detail || detail.segmentId !== segment.id) return;
+      insertMatch(detail.match, detail.andConfirm);
+    }
+    window.addEventListener(TM_INSERT_EVENT, handler as EventListener);
+    return () => window.removeEventListener(TM_INSERT_EVENT, handler as EventListener);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [segment.id]);
 
   async function loadMt() {
     setMtLoading(true);
@@ -324,13 +320,18 @@ export function SegmentRow({
         active ? "bg-[color:var(--color-bg-blue)]/40" : "bg-white hover:bg-[color:var(--color-slate-50)]",
         status === "translated" || status === "reviewed" ? "border-l-[3px] border-l-[color:var(--color-emerald-500)]" : "",
       ].join(" ")}
-      onFocusCapture={() => setActive(true)}
+      onFocusCapture={() => {
+        setActive(true);
+        onActivate?.({ id: segment.id, source_text: segment.source_text });
+      }}
       onBlurCapture={() => setActive(false)}
+      onClick={() =>
+        onActivate?.({ id: segment.id, source_text: segment.source_text })
+      }
     >
       <div className="text-xs text-[color:var(--color-slate-400)] mono pt-1">{segment.seq}</div>
-      <div className="flex flex-col items-center pt-0.5 gap-1">
+      <div className="flex flex-col items-center pt-0.5">
         <StatusIcon status={status} pulse={!!savedAt && status === "translated"} />
-        <div className="text-[9px] uppercase font-bold text-[color:var(--color-slate-500)] tracking-wide">{meta.label}</div>
       </div>
 
       <div className="text-sm leading-relaxed mono whitespace-pre-wrap text-[color:var(--color-navy)]">
@@ -362,51 +363,12 @@ export function SegmentRow({
               TM {Math.round(topMatch.score * 100)}%
             </span>
           )}
-          {!readOnly && (
-            <>
-              <button type="button" onClick={loadMatches} className="text-[color:var(--color-teal-700)] hover:underline">
-                {matchesLoading ? "Searching…" : "Refresh matches"}
-              </button>
-              {showMt && (
-                <button type="button" onClick={loadMt} className="text-[color:var(--color-purple-600)] hover:underline">
-                  {mtLoading ? "MT…" : mt ? "Re-run MT" : "Get MT"}
-                </button>
-              )}
-            </>
+          {!readOnly && showMt && (
+            <button type="button" onClick={loadMt} className="text-[color:var(--color-purple-600)] hover:underline">
+              {mtLoading ? "MT…" : mt ? "Re-run MT" : "Get MT"}
+            </button>
           )}
         </div>
-
-        {/* Fuzzy match list (loaded on demand) */}
-        {matches && matches.length > 0 && (
-          <ul className="mt-2 space-y-1.5 font-sans">
-            {matches.map((m) => (
-              <li key={m.unit_id} className="rounded border border-[color:var(--color-border)] bg-[color:var(--color-slate-50)] p-2">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${matchBadgeStyle(m.score)}`}>
-                    {Math.round(m.score * 100)}%
-                  </span>
-                  {m.tm_name && <span className="text-[10px] text-[color:var(--color-slate-500)]">{m.tm_name}</span>}
-                  <span className="text-[10px] text-[color:var(--color-slate-500)] capitalize">· {m.kind}</span>
-                </div>
-                <div className="text-xs mono text-[color:var(--color-slate-700)]">{m.source_text}</div>
-                <div className="text-xs mono text-[color:var(--color-navy)] mt-0.5">{m.target_text}</div>
-                {!readOnly && (
-                  <div className="mt-1.5 flex gap-2">
-                    <button type="button" onClick={() => insertMatch(m, false)} className="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-white border border-[color:var(--color-slate-200)] hover:bg-[color:var(--color-slate-100)]">
-                      Insert
-                    </button>
-                    <button type="button" onClick={() => insertMatch(m, true)} className="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-[color:var(--color-emerald-600)] text-white hover:bg-[color:var(--color-emerald-700)]">
-                      Insert &amp; confirm
-                    </button>
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-        {matches && matches.length === 0 && (
-          <div className="mt-2 text-[10px] text-[color:var(--color-slate-500)] font-sans italic">No matches yet — confirm a few segments and they'll start appearing here.</div>
-        )}
 
         {showMt && mt && (
           <div className="mt-2 rounded border border-[color:var(--color-purple-100)] bg-[color:var(--color-purple-100)]/40 p-2 font-sans">

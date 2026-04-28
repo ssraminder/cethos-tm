@@ -4,8 +4,8 @@ import { getServiceClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { getExactMatchesForJob } from "@/lib/tm/match";
 import { getTermHitsForJob } from "@/lib/termbase/hits";
-import { SegmentRow } from "./SegmentRow";
 import { LeftSearchAside } from "./LeftSearchAside";
+import { EditorBodyClient } from "./EditorBodyClient";
 import { HighlightedSource } from "./HighlightedSource";
 import { RealtimeJobStatus } from "@/components/RealtimeJobStatus";
 
@@ -149,37 +149,30 @@ export default async function EditorPage({
 
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-[260px_1fr_360px] min-h-0">
         <LeftSearchAside jobId={jobId} />
-        <div className="overflow-y-auto bg-white border-r border-[color:var(--color-border)]">
-          {(segments ?? []).length === 0 ? (
-            <div className="p-12 text-center text-sm text-[color:var(--color-slate-500)]">
-              No segments match this filter.
-            </div>
-          ) : (
-            <div>
-              <div className="grid grid-cols-[40px_36px_1fr_1fr] gap-3 px-3 py-2 bg-[color:var(--color-slate-50)] text-[10px] uppercase font-bold tracking-wide text-[color:var(--color-slate-500)] sticky top-0 z-10 border-b border-[color:var(--color-border)]">
-                <div>#</div>
-                <div></div>
-                <div>{sourceLangName ?? job.source_lang}</div>
-                <div>{targetLangName ?? job.target_lang}</div>
-              </div>
-              {(segments ?? []).map((s) => {
+        <div className="bg-white border-r border-[color:var(--color-border)] overflow-hidden">
+          <EditorBodyClient
+            jobId={jobId}
+            readOnly={readOnly}
+            showMt={isStaff}
+            sourceLangLabel={sourceLangName ?? job.source_lang}
+            targetLangLabel={targetLangName ?? job.target_lang}
+            segments={(segments ?? []) as never}
+            highlightedSourceById={Object.fromEntries(
+              (segments ?? []).map((s) => {
                 const hits = termHits.get(s.id) ?? [];
-                return (
-                  <SegmentRow
-                    key={s.id}
-                    segment={s as never}
-                    readOnly={readOnly}
-                    jobId={jobId}
-                    topMatch={exactMatches.get(s.id) ?? null}
-                    termHits={hits}
-                    highlightedSource={<HighlightedSource source={s.source_text} hits={hits} />}
-                    qaFindings={findingsBySeg.get(s.id) ?? []}
-                    showMt={isStaff}
-                  />
-                );
-              })}
-            </div>
-          )}
+                return [s.id, <HighlightedSource key={s.id} source={s.source_text} hits={hits} />];
+              }),
+            )}
+            topMatchById={Object.fromEntries(
+              (segments ?? []).map((s) => [s.id, exactMatches.get(s.id) ?? null]),
+            )}
+            termHitsById={Object.fromEntries(
+              (segments ?? []).map((s) => [s.id, termHits.get(s.id) ?? []]),
+            )}
+            qaFindingsById={Object.fromEntries(
+              (segments ?? []).map((s) => [s.id, findingsBySeg.get(s.id) ?? []]),
+            )}
+          />
         </div>
 
         <aside className="overflow-y-auto bg-white p-5 hidden lg:block">
