@@ -1,5 +1,12 @@
 -- ============================================================================
--- TM error log + test-provisioning records
+-- TM error log + test-provisioning records + api_key_scope enum bump
+-- ============================================================================
+--
+-- Enum bump: the ApiKeyScope union in src/lib/api-keys.ts gained
+-- "test_provisioning". The Postgres enum needs the matching value before
+-- new rows can be inserted.
+ALTER TYPE api_key_scope ADD VALUE IF NOT EXISTS 'test_provisioning';
+
 -- ============================================================================
 --
 -- Two tables for the test-page integration with the vendor portal:
