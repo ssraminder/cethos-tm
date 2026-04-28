@@ -36,6 +36,17 @@ const InputSchema = z.object({
   source_text: z.string().min(1).max(200_000),
   source_lang: z.string().min(2).max(10),
   target_lang: z.string().min(2).max(10),
+  /**
+   * Display names for the language codes — used to auto-upsert languages
+   * into TM's languages table when the portal sends a code TM hasn't seen
+   * yet. Without this, the job insert fails with a FK violation. Default
+   * to the code itself if the portal omits the name.
+   */
+  source_lang_name: z.string().min(1).max(120).optional(),
+  target_lang_name: z.string().min(1).max(120).optional(),
+  /** Optional: marks RTL languages on first insert (Persian, Arabic, etc.). */
+  source_lang_rtl: z.boolean().optional(),
+  target_lang_rtl: z.boolean().optional(),
   instructions: z.string().max(8000).optional(),
 });
 
@@ -198,6 +209,54 @@ export async function POST(req: NextRequest) {
     } catch { /* best-effort */ }
     return NextResponse.json(
       { error: `Could not create profile: ${msg}` },
+      { status: 500 },
+    );
+  }
+
+  // ---- 2b. Auto-upsert languages ----
+  // The portal carries 140+ languages but TM ships with a smaller seed set.
+  // Rather than fail the FK on jobs.source_lang / target_lang, upsert the
+  // codes the portal sent. First insert wins for the display name; later
+  // calls for the same code are no-ops via ON CONFLICT.
+  try {
+    const langsToUpsert = [
+      {
+        code: p.source_lang,
+        name: p.source_lang_name ?? p.source_lang,
+        rtl: p.source_lang_rtl ?? false,
+      },
+      {
+        code: p.target_lang,
+        name: p.target_lang_name ?? p.target_lang,
+        rtl: p.target_lang_rtl ?? false,
+      },
+    ];
+    const { error: upsertErr } = await supabase
+      .from("languages")
+      .upsert(langsToUpsert, { onConflict: "code", ignoreDuplicates: true });
+    if (upsertErr) throw new Error(upsertErr.message);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    await logTmError({
+      route: "/api/admin/test-jobs/create",
+      action: "languages_upsert",
+      severity: "error",
+      message: msg,
+      context: {
+        test_submission_id: p.test_submission_id,
+        source_lang: p.source_lang,
+        target_lang: p.target_lang,
+      },
+    });
+    // Cleanup user before bailing.
+    try {
+      await supabase.from("profiles").delete().eq("id", userId);
+    } catch { /* best-effort */ }
+    try {
+      await supabase.auth.admin.deleteUser(userId);
+    } catch { /* best-effort */ }
+    return NextResponse.json(
+      { error: `Could not upsert languages: ${msg}` },
       { status: 500 },
     );
   }
