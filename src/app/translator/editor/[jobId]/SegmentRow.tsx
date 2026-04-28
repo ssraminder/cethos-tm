@@ -63,6 +63,84 @@ const statusStyle: Record<Segment["status"], { dot: string; label: string }> = {
   locked:       { dot: "bg-[color:var(--color-slate-400)]", label: "Locked" },
 };
 
+/**
+ * Big, glanceable per-segment status icon. The translated / reviewed
+ * states show a check (single / double) inside a filled emerald circle —
+ * doubles as a "this has been saved into the TM" indicator since every
+ * confirm writes to the default TM. Tooltip spells it out for new
+ * translators.
+ */
+function StatusIcon({
+  status,
+  pulse,
+}: {
+  status: Segment["status"];
+  pulse: boolean;
+}) {
+  const tooltip: Record<Segment["status"], string> = {
+    untranslated: "Open — not yet translated",
+    draft: "Draft — typed but not confirmed",
+    translated: "Confirmed · saved to translation memory",
+    reviewed: "Reviewed · saved to translation memory",
+    locked: "Locked",
+  };
+  const wrap = (inner: ReactNode, ring: string) => (
+    <div
+      className={[
+        "w-6 h-6 rounded-full flex items-center justify-center transition",
+        ring,
+        pulse ? "ring-4 ring-[color:var(--color-emerald-300)]/60" : "",
+      ].join(" ")}
+      title={tooltip[status]}
+      aria-label={tooltip[status]}
+    >
+      {inner}
+    </div>
+  );
+
+  if (status === "translated") {
+    return wrap(
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="20 6 9 17 4 12" />
+      </svg>,
+      "bg-[color:var(--color-emerald-500)]",
+    );
+  }
+  if (status === "reviewed") {
+    return wrap(
+      // Double check
+      <svg width="16" height="14" viewBox="0 0 24 18" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="2 11 8 17 14 5" />
+        <polyline points="9 11 15 17 21 5" />
+      </svg>,
+      "bg-[color:var(--color-emerald-600)]",
+    );
+  }
+  if (status === "draft") {
+    return wrap(
+      // Pencil / dot
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="white" stroke="white" strokeWidth="0">
+        <circle cx="12" cy="12" r="4" />
+      </svg>,
+      "bg-[color:var(--color-amber-500)]",
+    );
+  }
+  if (status === "locked") {
+    return wrap(
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="5" y="11" width="14" height="10" rx="2" />
+        <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+      </svg>,
+      "bg-[color:var(--color-slate-400)]",
+    );
+  }
+  // untranslated → empty ring
+  return wrap(
+    null,
+    "border-2 border-[color:var(--color-slate-300)] bg-white",
+  );
+}
+
 function matchBadgeStyle(score: number): string {
   if (score >= 1)    return "bg-[color:var(--color-emerald-500)] text-white";
   if (score >= 0.95) return "bg-[color:var(--color-lime-500)] text-white";
@@ -231,9 +309,9 @@ export function SegmentRow({
       onBlurCapture={() => setActive(false)}
     >
       <div className="text-xs text-[color:var(--color-slate-400)] mono pt-1">{segment.seq}</div>
-      <div className="flex flex-col items-center pt-1.5 gap-1" title={meta.label}>
-        <div className={`w-2 h-2 rounded-full ${meta.dot}`} />
-        <div className="text-[9px] uppercase font-bold text-[color:var(--color-slate-400)] tracking-wide">{meta.label[0]}</div>
+      <div className="flex flex-col items-center pt-0.5 gap-1">
+        <StatusIcon status={status} pulse={!!savedAt && status === "translated"} />
+        <div className="text-[9px] uppercase font-bold text-[color:var(--color-slate-500)] tracking-wide">{meta.label}</div>
       </div>
 
       <div className="text-sm leading-relaxed mono whitespace-pre-wrap text-[color:var(--color-navy)]">
@@ -403,7 +481,12 @@ export function SegmentRow({
           <div className="flex items-center justify-between gap-2">
             <div className="text-[10px] text-[color:var(--color-slate-400)]">
               {error && <span className="text-[color:var(--color-rose-600)]">{error}</span>}
-              {!error && savedAt && <span>Saved {savedAt}</span>}
+              {!error && savedAt && status === "translated" && (
+                <span className="text-[color:var(--color-emerald-700)] font-semibold">
+                  ✓ Confirmed · saved to TM at {savedAt}
+                </span>
+              )}
+              {!error && savedAt && status !== "translated" && <span>Saved {savedAt}</span>}
               {!error && !savedAt && isPending && <span>Saving…</span>}
             </div>
             <div className="flex items-center gap-2">
