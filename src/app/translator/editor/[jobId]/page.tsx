@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/auth/current-user";
 import { getExactMatchesForJob } from "@/lib/tm/match";
 import { getTermHitsForJob } from "@/lib/termbase/hits";
 import { SegmentRow } from "./SegmentRow";
+import { LeftSearchAside } from "./LeftSearchAside";
 import { HighlightedSource } from "./HighlightedSource";
 import { RealtimeJobStatus } from "@/components/RealtimeJobStatus";
 
@@ -135,7 +136,8 @@ export default async function EditorPage({
         </span>
       </div>
 
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_360px] min-h-0">
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[260px_1fr_360px] min-h-0">
+        <LeftSearchAside jobId={jobId} />
         <div className="overflow-y-auto bg-white border-r border-[color:var(--color-border)]">
           {(segments ?? []).length === 0 ? (
             <div className="p-12 text-center text-sm text-[color:var(--color-slate-500)]">
