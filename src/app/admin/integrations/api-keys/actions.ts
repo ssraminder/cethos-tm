@@ -10,7 +10,7 @@ import { audit } from "@/lib/auth/audit";
 
 const MintSchema = z.object({
   name: z.string().min(1).max(120),
-  scope: z.enum(["tms_ingest", "webhook_callback"]),
+  scope: z.enum(["tms_ingest", "webhook_callback", "test_provisioning"]),
 });
 
 export async function mintApiKeyAction(formData: FormData): Promise<void> {
