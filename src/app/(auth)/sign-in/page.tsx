@@ -8,6 +8,7 @@ export default async function SignInPage({
     error?: string;
     error_code?: string;
     error_description?: string;
+    info?: string;
     next?: string;
     email?: string;
   }>;
@@ -23,10 +24,19 @@ export default async function SignInPage({
     : sp.error
     ? decodeURIComponent(sp.error_description ?? sp.error)
     : null;
+  // ?info= renders in the green success chip (e.g. "Password updated. Sign
+  // in with your new password.") to differentiate from real errors.
+  const infoMsg = sp.info ? decodeURIComponent(sp.info) : null;
   return (
     <div className="bg-white rounded-xl shadow-[var(--shadow-soft)] border border-[color:var(--color-border)] p-8">
       <h2 className="text-xl font-bold text-[color:var(--color-navy)]">Sign in to Cethos CAT</h2>
       <p className="text-sm text-[color:var(--color-slate-500)] mt-1">Translation memory, terminology, MT, and QA.</p>
+
+      {infoMsg && (
+        <div className="mt-4 text-sm rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700 px-3 py-2">
+          {infoMsg}
+        </div>
+      )}
 
       {friendlyError && (
         <div className="mt-4 text-sm rounded-md border border-[color:var(--color-rose-100)] bg-[color:var(--color-rose-50)] text-[color:var(--color-rose-600)] px-3 py-2">

@@ -26,5 +26,7 @@ export async function resetPasswordAction(formData: FormData): Promise<void> {
     redirect(`/reset-password?error=${encodeURIComponent(error.message)}`);
   }
   await audit({ category: "auth", action: "password_changed", actorId: user!.id, actorEmail: user!.email });
-  redirect("/sign-in?error=" + encodeURIComponent("Password updated. Sign in with your new password."));
+  // Use ?info= (not ?error=) so /sign-in renders this in the green
+  // success chip instead of the rose error chip.
+  redirect("/sign-in?info=" + encodeURIComponent("Password updated. Sign in with your new password."));
 }
