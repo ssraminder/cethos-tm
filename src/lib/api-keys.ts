@@ -2,7 +2,13 @@ import { createHash, randomBytes } from "node:crypto";
 import { env } from "./env";
 import { getServiceClient } from "./supabase/server";
 
-export type ApiKeyScope = "tms_ingest" | "webhook_callback";
+export type ApiKeyScope =
+  | "tms_ingest"
+  | "webhook_callback"
+  // Used by the vendor portal to provision a disposable applicant account +
+  // job + segments when a translator-qualification test goes out. See
+  // /api/admin/test-jobs/create.
+  | "test_provisioning";
 
 export interface ApiKeyRecord {
   id: string;
@@ -31,7 +37,13 @@ export async function mintApiKey(opts: {
   expires_at?: string | null;
 }): Promise<{ id: string; plaintext: string; prefix: string }> {
   const random = randomBytes(24).toString("hex");
-  const plaintext = `cethos_${opts.scope === "tms_ingest" ? "tms" : "wh"}_${random}`;
+  const scopePrefix =
+    opts.scope === "tms_ingest"
+      ? "tms"
+      : opts.scope === "test_provisioning"
+      ? "tp"
+      : "wh";
+  const plaintext = `cethos_${scopePrefix}_${random}`;
   const prefix = plaintext.slice(0, PREFIX_LEN);
   const keyHash = hashKey(plaintext);
 

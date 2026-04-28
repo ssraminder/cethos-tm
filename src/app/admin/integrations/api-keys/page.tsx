@@ -48,6 +48,7 @@ export default async function ApiKeysPage({
             <select name="scope" defaultValue="tms_ingest" className="w-full rounded-md border border-[color:var(--color-slate-200)] bg-white px-3 py-2 text-sm">
               <option value="tms_ingest">TMS ingest</option>
               <option value="webhook_callback">Webhook callback</option>
+              <option value="test_provisioning">Test provisioning (vendor portal)</option>
             </select>
           </div>
         </div>
