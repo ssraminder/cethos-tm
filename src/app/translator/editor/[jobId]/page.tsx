@@ -31,7 +31,7 @@ export default async function EditorPage({
 
   let q = supabase
     .from("segments")
-    .select("id, seq, source_text, target_text, status, word_count")
+    .select("id, seq, source_text, target_text, status, word_count, target_origin")
     .eq("job_id", jobId)
     .order("seq", { ascending: true });
 

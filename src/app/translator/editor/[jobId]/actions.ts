@@ -12,6 +12,13 @@ const SaveSchema = z.object({
   segment_id: z.string().uuid(),
   target_text: z.string().max(20_000),
   confirm: z.string().optional(),
+  /**
+   * Provenance of target_text. Optional — if omitted we leave the column
+   * alone (so saves from places that don't yet track origin don't reset it).
+   */
+  origin: z
+    .enum(["human", "mt", "mt_edited", "tm", "tm_edited", "copied_source"])
+    .optional(),
 });
 
 export type SaveResult = { ok: true } | { ok: false; error: string };
@@ -25,7 +32,7 @@ export async function saveSegmentAction(formData: FormData): Promise<SaveResult>
   });
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
 
-  const { segment_id, target_text, confirm } = parsed.data!;
+  const { segment_id, target_text, confirm, origin } = parsed.data!;
   const supabase = await getServiceClient();
 
   const { data: seg } = await supabase
@@ -55,6 +62,14 @@ export async function saveSegmentAction(formData: FormData): Promise<SaveResult>
   } else {
     update.confirmed_by = null;
     update.confirmed_at = null;
+  }
+  // Persist origin only when the client sent one — saves that don't carry
+  // it (older code paths) leave the column alone. When the target is
+  // empty (untranslated) we clear origin too so re-typing starts fresh.
+  if (trimmed.length === 0) {
+    update.target_origin = null;
+  } else if (origin) {
+    update.target_origin = origin;
   }
 
   const { error } = await supabase.from("segments").update(update).eq("id", segment_id);

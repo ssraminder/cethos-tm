@@ -13,7 +13,47 @@ interface Segment {
   target_text: string;
   status: "untranslated" | "draft" | "translated" | "reviewed" | "locked";
   word_count: number;
+  target_origin?:
+    | "human"
+    | "mt"
+    | "mt_edited"
+    | "tm"
+    | "tm_edited"
+    | "copied_source"
+    | null;
 }
+
+type Origin = NonNullable<Segment["target_origin"]>;
+
+const originBadge: Partial<
+  Record<Origin, { label: string; className: string; title: string }>
+> = {
+  mt: {
+    label: "MT",
+    className: "bg-[color:var(--color-purple-500)] text-white",
+    title: "Machine-translated, unedited",
+  },
+  mt_edited: {
+    label: "MT edited",
+    className: "bg-[color:var(--color-purple-100)] text-[color:var(--color-purple-700)] border border-[color:var(--color-purple-200)]",
+    title: "Started from MT, then edited by translator",
+  },
+  tm: {
+    label: "TM",
+    className: "bg-[color:var(--color-emerald-500)] text-white",
+    title: "Inserted from TM, unedited",
+  },
+  tm_edited: {
+    label: "TM edited",
+    className: "bg-[color:var(--color-emerald-100)] text-[color:var(--color-emerald-700)] border border-[color:var(--color-emerald-200)]",
+    title: "Started from TM, then edited by translator",
+  },
+  copied_source: {
+    label: "copied source",
+    className: "bg-[color:var(--color-slate-200)] text-[color:var(--color-slate-700)]",
+    title: "Source copied verbatim into target",
+  },
+};
 
 const statusStyle: Record<Segment["status"], { dot: string; label: string }> = {
   untranslated: { dot: "bg-[color:var(--color-slate-300)]", label: "Open" },
@@ -71,6 +111,26 @@ export function SegmentRow({
   const [matchesLoading, setMatchesLoading] = useState(false);
   const [mt, setMt] = useState<MtSuggestion | null>(null);
   const [mtLoading, setMtLoading] = useState(false);
+  // Provenance of the current target_text. Updates as the translator
+  // pastes from MT / TM / Copy source, and flips to *_edited / human
+  // when they diverge from the inserted text. Persisted on save.
+  const [origin, setOrigin] = useState<Origin | null>(
+    segment.target_origin ?? null,
+  );
+  // The text we last "set" from a machine source (MT/TM/copy). When the
+  // textarea content matches this, origin stays as the machine value.
+  // When it differs, origin flips to *_edited (or 'human').
+  const [pristine, setPristine] = useState<{
+    text: string;
+    origin: Origin;
+  } | null>(null);
+
+  function deriveOriginAfterEdit(value: string): Origin {
+    if (pristine && value === pristine.text) return pristine.origin;
+    if (origin === "mt" || origin === "mt_edited") return "mt_edited";
+    if (origin === "tm" || origin === "tm_edited") return "tm_edited";
+    return "human";
+  }
 
   function submit(formData: FormData) {
     startTransition(async () => {
@@ -85,6 +145,18 @@ export function SegmentRow({
       const trimmed = String(formData.get("target_text") ?? "").trim();
       setStatus(wantConfirm ? "translated" : trimmed ? "draft" : "untranslated");
     });
+  }
+
+  // Build a FormData for the form submit including current origin. The
+  // <form action> path doesn't go through this — it builds its own
+  // FormData from inputs — so the textarea form has a hidden `origin`
+  // input synced to state.
+
+  function copySourceToTarget() {
+    if (readOnly) return;
+    setTarget(segment.source_text);
+    setOrigin("copied_source");
+    setPristine({ text: segment.source_text, origin: "copied_source" });
   }
 
   async function loadMatches() {
@@ -122,20 +194,26 @@ export function SegmentRow({
   function insertMt(andConfirm = false) {
     if (!mt) return;
     setTarget(mt.target_text);
+    setOrigin("mt");
+    setPristine({ text: mt.target_text, origin: "mt" });
     if (readOnly) return;
     const fd = new FormData();
     fd.append("segment_id", segment.id);
     fd.append("target_text", mt.target_text);
+    fd.append("origin", "mt");
     if (andConfirm) fd.append("confirm", "1");
     submit(fd);
   }
 
   function insertMatch(m: TmMatch, andConfirm = false) {
     setTarget(m.target_text);
+    setOrigin("tm");
+    setPristine({ text: m.target_text, origin: "tm" });
     if (readOnly) return;
     const fd = new FormData();
     fd.append("segment_id", segment.id);
     fd.append("target_text", m.target_text);
+    fd.append("origin", "tm");
     if (andConfirm) fd.append("confirm", "1");
     submit(fd);
   }
@@ -269,10 +347,34 @@ export function SegmentRow({
           </ul>
         )}
         <input type="hidden" name="segment_id" value={segment.id} />
+        <input
+          type="hidden"
+          name="origin"
+          value={
+            target.trim().length === 0
+              ? ""
+              : (pristine && target === pristine.text)
+              ? pristine.origin
+              : (origin === "mt" || origin === "mt_edited")
+              ? "mt_edited"
+              : (origin === "tm" || origin === "tm_edited")
+              ? "tm_edited"
+              : "human"
+          }
+        />
         <textarea
           name="target_text"
           value={target}
-          onChange={(e) => setTarget(e.target.value)}
+          onChange={(e) => {
+            const v = e.target.value;
+            setTarget(v);
+            if (v.trim().length === 0) {
+              setOrigin(null);
+              setPristine(null);
+            } else {
+              setOrigin(deriveOriginAfterEdit(v));
+            }
+          }}
           disabled={readOnly || isPending}
           placeholder={readOnly ? "(read-only)" : "Type translation…"}
           rows={Math.max(2, Math.min(8, Math.ceil(segment.source_text.length / 60)))}
@@ -282,6 +384,21 @@ export function SegmentRow({
             readOnly ? "bg-[color:var(--color-slate-50)] text-[color:var(--color-slate-500)]" : "bg-white",
           ].join(" ")}
         />
+        {origin && originBadge[origin] && (
+          <div className="flex items-center gap-1.5">
+            <span
+              className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide ${originBadge[origin]!.className}`}
+              title={originBadge[origin]!.title}
+            >
+              {originBadge[origin]!.label}
+            </span>
+            {(origin === "mt" || origin === "tm" || origin === "copied_source") && status === "translated" && (
+              <span className="text-[10px] text-[color:var(--color-amber-600)] italic font-sans">
+                confirmed without edits
+              </span>
+            )}
+          </div>
+        )}
         {!readOnly && (
           <div className="flex items-center justify-between gap-2">
             <div className="text-[10px] text-[color:var(--color-slate-400)]">
@@ -290,6 +407,15 @@ export function SegmentRow({
               {!error && !savedAt && isPending && <span>Saving…</span>}
             </div>
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={copySourceToTarget}
+                disabled={isPending}
+                className="px-2 py-1 text-xs font-semibold rounded border border-[color:var(--color-slate-200)] bg-white text-[color:var(--color-slate-700)] hover:bg-[color:var(--color-slate-50)]"
+                title="Copy the source text into the target cell verbatim — useful for brand names, numbers, code"
+              >
+                Copy source
+              </button>
               {topMatch && (
                 <button
                   type="button"
