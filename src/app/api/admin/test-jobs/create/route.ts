@@ -328,6 +328,46 @@ export async function POST(req: NextRequest) {
     api_key_id: record.id,
   });
 
+  // ---- 4b. Mint a single-use signin token (magic-link replacement) ----
+  // Stored in our own DB (not Supabase Auth) so we don't depend on the
+  // applicant being able to receive emails at @cethos.test. The /t/[token]
+  // route validates this and bridges to a Supabase session.
+  const tokenExpiresAt = new Date(
+    Date.now() + 48 * 60 * 60 * 1000,
+  ).toISOString();
+  const { data: signinRow, error: signinErr } = await supabase
+    .from("test_signin_tokens")
+    .insert({
+      user_id: userId,
+      job_id: jobResult.job_id,
+      expires_at: tokenExpiresAt,
+    })
+    .select("token")
+    .single();
+
+  if (signinErr || !signinRow) {
+    await logTmError({
+      route: "/api/admin/test-jobs/create",
+      action: "signin_token_insert",
+      severity: "error",
+      message: signinErr?.message ?? "no token returned",
+      context: {
+        test_submission_id: p.test_submission_id,
+        user_id: userId,
+        job_id: jobResult.job_id,
+      },
+    });
+    // Don't fail the whole call — fall back to email/password (still in body).
+  }
+
+  const baseUrl = (process.env.APP_BASE_URL ?? "https://tm.cethos.com").replace(
+    /\/$/,
+    "",
+  );
+  const signinUrl = signinRow
+    ? `${baseUrl}/t/${(signinRow as { token: string }).token}`
+    : null;
+
   await audit({
     category: "job",
     action: "test_job_provisioned",
@@ -352,6 +392,7 @@ export async function POST(req: NextRequest) {
       idempotent: false,
       applicant_email: email,
       applicant_password: password,
+      signin_url: signinUrl,
       job_id: jobResult.job_id,
       job_reference: jobResult.reference,
       segments: jobResult.segments,

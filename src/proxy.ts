@@ -11,6 +11,7 @@ const PUBLIC_PATHS = [
   "/forgot-password",
   "/reset-password",
   "/sso",
+  "/t",                   // /t/[token] — vendor-portal magic-link entry, validates token from internal DB before any session is established
   "/api",                 // /api/* uses Bearer-token auth (or none for public health), never the Supabase session
   "/_next",
   "/favicon.ico",

@@ -64,9 +64,10 @@ export async function signInAction(formData: FormData): Promise<void> {
   // continue through the OTP/verify flow.
   if (profile!.mfa_required === false) {
     // Set the MFA cookie so /translator + /admin etc. don't bounce them back
-    // to /verify.
-    const { setMfaCookie } = await import("@/lib/auth/mfa-cookie");
-    await setMfaCookie(profile!.id);
+    // to /verify. The cookie is a JWT signed with APP_SECRET — see
+    // _shared mfa-cookie helper.
+    const { issueMfaCookie } = await import("@/lib/auth/mfa-cookie");
+    await issueMfaCookie(profile!.id, email);
     await audit({
       category: "auth",
       action: "sign_in_mfa_skipped",
