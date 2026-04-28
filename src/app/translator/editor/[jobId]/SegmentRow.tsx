@@ -248,18 +248,37 @@ export function SegmentRow({
   // Auto-load fuzzy matches once on mount so the translator doesn't have
   // to click "Find TM matches" per row. The page-load topMatch covers the
   // ≥1.0 exact case; this fills in everything below 1.0.
+  //
+  // Side effect: if a 100% match exists AND target is empty AND we're not
+  // read-only, auto-populate the target cell with the exact match. The
+  // translator can edit or hit Confirm directly. Fuzzy matches only
+  // populate the panel — translator still has to click Insert to use them.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const res = await findMatchesAction({ job_id: jobId, source_text: segment.source_text });
       if (cancelled) return;
       if (res.ok) setMatches(res.matches);
-      // Silent on error — match panel just stays empty. Keeps the editor
-      // clean for the common no-attached-TM-but-not-actually-empty case.
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId, segment.id]);
+
+  // Auto-insert a 100% TM match into the target if the target is empty.
+  // We rely on `topMatch` from page-load (it's the top-scored exact match
+  // for this segment). Only triggers when (a) score >= 1.0, (b) the
+  // textarea is currently empty, (c) the row isn't read-only.
+  useEffect(() => {
+    if (readOnly) return;
+    if (!topMatch || topMatch.score < 1) return;
+    if (target.trim().length > 0) return;
+    setTarget(topMatch.target_text);
+    setOrigin("tm");
+    setPristine({ text: topMatch.target_text, origin: "tm" });
+    // Don't auto-confirm — translator reviews and clicks Confirm. Don't
+    // persist to DB either — the next Save/Confirm covers that.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function loadMt() {
     setMtLoading(true);
@@ -470,7 +489,7 @@ export function SegmentRow({
             >
               {originBadge[origin]!.label}
             </span>
-            {(origin === "mt" || origin === "tm" || origin === "copied_source") && status === "translated" && (
+            {(origin === "mt" || origin === "copied_source") && status === "translated" && (
               <span className="text-[10px] text-[color:var(--color-amber-600)] italic font-sans">
                 confirmed without edits
               </span>

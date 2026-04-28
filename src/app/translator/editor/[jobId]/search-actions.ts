@@ -74,19 +74,33 @@ export async function searchTmAction(input: {
     .select("resource_id, translation_memories!inner(id, name, source_lang, target_lang)")
     .eq("job_id", job_id)
     .eq("resource_type", "tm");
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const tmRows = (attached ?? []).filter((r: any) => {
-    const tm = r.translation_memories;
-    return tm.source_lang === j.source_lang && tm.target_lang === j.target_lang;
+
+  // Postgrest's TS inference treats embedded relations as arrays even when
+  // the FK cardinality is many-to-one. Normalise via a runtime guard.
+  type AttachedRow = {
+    resource_id: string;
+    translation_memories:
+      | { id: string; name: string; source_lang: string; target_lang: string }
+      | { id: string; name: string; source_lang: string; target_lang: string }[];
+  };
+  const pickTm = (r: AttachedRow) =>
+    Array.isArray(r.translation_memories)
+      ? r.translation_memories[0]
+      : r.translation_memories;
+
+  const tmRows = ((attached ?? []) as AttachedRow[]).filter((r) => {
+    const tm = pickTm(r);
+    return tm && tm.source_lang === j.source_lang && tm.target_lang === j.target_lang;
   });
   if (tmRows.length === 0) {
     return { ok: true, results: [] };
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const tmIds = tmRows.map((r: any) => r.translation_memories.id as string);
+  const tmIds = tmRows.map((r) => pickTm(r).id);
   const tmNameById = new Map<string, string>();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  for (const r of tmRows) tmNameById.set(r.translation_memories.id as string, r.translation_memories.name as string);
+  for (const r of tmRows) {
+    const tm = pickTm(r);
+    tmNameById.set(tm.id, tm.name);
+  }
 
   // 2. ILIKE on source OR target. Postgrest .or() syntax.
   const escaped = query.replace(/[%_]/g, (m) => `\\${m}`);
@@ -193,14 +207,24 @@ export async function searchGlossaryAction(input: {
     .select("resource_id, termbases!inner(id, name)")
     .eq("job_id", job_id)
     .eq("resource_type", "termbase");
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const tbIds = (attached ?? []).map((r: any) => r.termbases.id as string);
+
+  type AttachedTb = {
+    resource_id: string;
+    termbases: { id: string; name: string } | { id: string; name: string }[];
+  };
+  const pickTb = (r: AttachedTb) =>
+    Array.isArray(r.termbases) ? r.termbases[0] : r.termbases;
+
+  const tbRows = ((attached ?? []) as AttachedTb[]).filter((r) => !!pickTb(r));
+  const tbIds = tbRows.map((r) => pickTb(r).id);
   if (tbIds.length === 0) {
     return { ok: true, results: [] };
   }
   const tbNameById = new Map<string, string>();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  for (const r of attached ?? []) tbNameById.set(r.termbases.id as string, r.termbases.name as string);
+  for (const r of tbRows) {
+    const tb = pickTb(r);
+    tbNameById.set(tb.id, tb.name);
+  }
 
   // Find concepts in attached termbases that have an entry matching the
   // query in EITHER the source or target language.
@@ -242,7 +266,10 @@ export async function searchGlossaryAction(input: {
   }>();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   for (const e of (allEntries ?? []) as any[]) {
-    const concept = e.term_concepts;
+    const concept = Array.isArray(e.term_concepts)
+      ? e.term_concepts[0]
+      : e.term_concepts;
+    if (!concept) continue;
     const isSrc = sourceLangs.includes(e.language);
     const isTgt = targetLangs.includes(e.language);
     if (!isSrc && !isTgt) continue;

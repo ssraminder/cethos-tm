@@ -28,6 +28,17 @@ export default async function EditorPage({
   const isStaff = me.role === "admin" || me.role === "pm";
   if (!isAssignedToMe && !isStaff && job.reviewer_id !== me.id) notFound();
 
+  // Pretty language names for the column headers (e.g. "English" vs "en").
+  const { data: jobLangs } = await supabase
+    .from("languages")
+    .select("code, name")
+    .in("code", [job.source_lang, job.target_lang]);
+  const langNameByCode = new Map<string, string>(
+    (jobLangs ?? []).map((l) => [(l as { code: string }).code, (l as { name: string }).name]),
+  );
+  const sourceLangName = langNameByCode.get(job.source_lang) ?? null;
+  const targetLangName = langNameByCode.get(job.target_lang) ?? null;
+
   const readOnly = !isAssignedToMe || (job.status !== "assigned" && job.status !== "in_progress");
 
   let q = supabase
@@ -148,8 +159,8 @@ export default async function EditorPage({
               <div className="grid grid-cols-[40px_36px_1fr_1fr] gap-3 px-3 py-2 bg-[color:var(--color-slate-50)] text-[10px] uppercase font-bold tracking-wide text-[color:var(--color-slate-500)] sticky top-0 z-10 border-b border-[color:var(--color-border)]">
                 <div>#</div>
                 <div></div>
-                <div>Source</div>
-                <div>Target</div>
+                <div>{sourceLangName ?? job.source_lang}</div>
+                <div>{targetLangName ?? job.target_lang}</div>
               </div>
               {(segments ?? []).map((s) => {
                 const hits = termHits.get(s.id) ?? [];
