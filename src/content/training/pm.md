@@ -19,14 +19,18 @@ keep jobs flowing, watch deadlines, and step in when QA finds something.
 9. [Concordance](#concordance)
 10. [Reports](#reports)
 11. [Common workflows](#common-workflows)
+12. [QA and the Deliver pipeline](#qa-and-the-deliver-pipeline)
 
 ---
 
 ## Signing in
 
-Same flow as everyone else: email + password at `/sign-in`, then a 6-digit
-OTP at `/verify`. The OTP arrives via Mailgun within a few seconds. After
-verifying, you land on the PM dashboard.
+![PM sign-in](/training/pm/00-sign-in.png)
+
+Sign-in is OTP-only. Enter your email at `/sign-in`, we email a 6-digit
+code via Mailgun, and you enter it at `/verify`. There is no password.
+The OTP expires in 10 minutes. After verifying, you land on the PM
+dashboard.
 
 If your email domain isn't yet receiving Mailgun mail, an admin can issue
 you a known OTP via `node scripts/issue-test-otp.cjs <your-email> 111111`
@@ -112,8 +116,11 @@ Every job in your tenancy. Columns:
   through `POST /api/jobs/ingest`)
 - **Pair** — `en-US → fr-FR` style
 - **Words** — total billable
-- **Status** — `draft`, `assigned`, `in_progress`, `review`, `submitted`,
-  `closed`, `cancelled`
+- **Status** — `draft`, `assigned`, `in_progress`, `qa_running`,
+  `qa_review`, `delivered`, `submitted` (test jobs only), `closed`,
+  `cancelled`
+- **Class** — `production` (default — runs full QA on Deliver) or
+  `test` (recruitment / smoke; skips QA)
 - **Deadline** — local timestamp, sorted ascending so urgent items rise
 
 Click any row's reference (or open the job detail directly) to drill in.
@@ -289,6 +296,60 @@ through the editor.
    ingest preserves the tag inventory in `segments.meta.tags`)
 3. Round-trip safe: importing this XLIFF back into Cethos CAT produces
    identical segments
+
+---
+
+## QA and the Deliver pipeline
+
+When a translator clicks **Deliver** in the editor, the job runs through
+a two-phase pipeline before landing in front of you:
+
+![Deliver pipeline overview](/training/pm/10-deliver-pipeline.png)
+
+### Status transitions
+- `in_progress → qa_running` — translator clicked Deliver
+- `qa_running → qa_review` — QA finished; findings are loaded into the
+  editor's review pane for the translator to triage
+- `qa_review → delivered` — translator clicked Confirm Delivery; all
+  critical findings resolved
+
+### Phase 1 — Deterministic QA (free, instant)
+- Placeholder/tag integrity, number/URL/email carry-through, length
+  ratio, double-space, forbidden-term hits, untranslated, empty target.
+- Findings written to `qa_findings` with `source = 'deterministic'`.
+- If any critical finding is produced, Phase 2 is skipped.
+
+### Phase 2 — Opus QA (paid, ~$0.08/1k words cached)
+- Claude Opus reviews every confirmed segment in batches of 50 with the
+  system prompt cached. The cached block carries language pair, full
+  glossary, style guide, severity rubric, and target-language
+  punctuation rules (CJK full-width, French NBSP-before-`: ; ? !`,
+  Spanish opening `¡`/`¿`, Thai/Lao no terminal period, etc.).
+- Findings written with `source = 'opus'`, `category` (accuracy /
+  terminology / fluency / grammar / register / punctuation / locale /
+  style), and an optional `suggested_target`.
+- A `qa_runs` row tracks token usage and cost per Deliver invocation.
+  Default cost cap: $5/job.
+
+### Job class — production vs test
+- **Production** jobs run the full pipeline.
+- **Test** jobs (created via `/api/admin/test-jobs/create` for
+  recruitment) skip QA entirely. Deliver short-circuits to status
+  `submitted` and the recruitment grader takes over.
+- Class is set at job creation; immutable afterward.
+
+### Killswitch
+Set env var `QA_ENABLED=false` to suppress the Opus phase platform-wide
+without disabling Deliver. Deterministic still runs and the review pane
+still appears for findings.
+
+### What the PM sees
+- The **Live** dot keeps ticking as the translator works through the QA
+  review pane (accept/edit/reject)
+- Once `delivered`, the job appears in your delivered queue (UI: filter
+  jobs list by status).
+- If a critical finding can't be resolved, the translator may **Reject**
+  it with a note — review the note before contesting with them.
 
 ---
 

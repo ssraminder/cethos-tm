@@ -33,11 +33,12 @@ first day; use it as a reference afterwards.
 
 ## 1. Signing in
 
-Open `https://your-cethos-cat.example.com/sign-in` (in dev: `http://localhost:3000/sign-in`).
+Open `https://tm.cethos.com/sign-in` (or `http://localhost:3000/sign-in`
+in dev).
 
 ![Sign-in page](/training/admin/01-sign-in.png)
 
-1. Enter your **email** and **password**.
+1. Enter your **email**.
 2. We email a 6-digit verification code (OTP) to your inbox via Mailgun.
    The default sender domain is `reply.cethos.com`.
 3. On the next screen, type the code. It expires in 10 minutes.
@@ -46,13 +47,13 @@ Open `https://your-cethos-cat.example.com/sign-in` (in dev: `http://localhost:30
 
 4. You'll land on the admin dashboard.
 
-If you forget your password, click **Forgot password?**. We send a Supabase
-password-reset link to your email; the link routes through `/reset-password`
-where you set a new password (minimum 12 characters).
+There is no password to remember — every sign-in is OTP-only. If your
+inbox isn't receiving the OTP, check spam first, then issue a known OTP
+(see below).
 
-> Translators usually arrive via a job link from the vendor portal; that flow
-> bypasses the password screen entirely. Admin/PM accounts always go through
-> password + OTP.
+> Translators usually arrive via a job link from the vendor portal; that
+> flow uses the same OTP mechanism but auto-submits the code embedded in
+> the link.
 
 ### Stuck without an inbox? Use a known OTP
 
@@ -244,6 +245,46 @@ update public.qa_profiles
 set rules = '[ ... ]'::jsonb
 where id = '...';
 ```
+
+### Deliver pipeline (deterministic + Opus QA)
+
+Beyond manual `Run QA`, every production job runs through a two-phase
+pipeline when the translator clicks **Deliver**:
+
+1. **Phase 1 — Deterministic** — runs the QA profile above, in-process,
+   instantly. Findings stored with `source = 'deterministic'`. If any
+   critical finding is produced, Phase 2 is skipped.
+2. **Phase 2 — Opus QA** — Claude Opus reviews every confirmed segment
+   in cached batches of 50. Adds findings with `source = 'opus'`,
+   `category` (accuracy / terminology / fluency / grammar / register /
+   punctuation / locale / style), and an optional `suggested_target`.
+
+A `qa_runs` row tracks per-Deliver telemetry (model, input/cached/output
+tokens, cost_usd, status). Default cost cap: $5/job.
+
+**Job class** (`jobs.job_class`):
+- `production` — full pipeline (default)
+- `test` — set automatically on jobs created via
+  `/api/admin/test-jobs/create` for recruitment. **Skips QA entirely** —
+  Deliver short-circuits to status `submitted` and the recruitment
+  grader takes over.
+
+**Killswitch:** env var `QA_ENABLED=false` suppresses the Opus phase
+platform-wide without disabling Deliver. Deterministic still runs.
+
+**Required env vars for Opus QA:**
+- `ANTHROPIC_API_KEY` — your Anthropic API key
+- `QA_ENABLED` — optional, defaults to `true`
+
+If `ANTHROPIC_API_KEY` is missing, Phase 2 is skipped with a
+`skipped_reason` and Deliver still completes (deterministic only). Set
+the key in Vercel and redeploy.
+
+**Per-target-language punctuation rules** are baked into the cached
+Opus system prompt: CJK full-width (`。！？，：；`), French NBSP before
+`: ; ? !`, Spanish opening `¡`/`¿`, Thai/Lao no terminal period, Arabic
+`، ؛ ؟`, Greek `;` for question, etc. Opus evaluates target punctuation
+against the **target** language's conventions, not the source's.
 
 ---
 
