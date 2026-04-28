@@ -193,7 +193,9 @@ export async function POST(req: NextRequest) {
     });
     // Best-effort cleanup on failure: delete the auth user so we don't leak
     // accounts.
-    await supabase.auth.admin.deleteUser(userId).catch(() => undefined);
+    try {
+      await supabase.auth.admin.deleteUser(userId);
+    } catch { /* best-effort */ }
     return NextResponse.json(
       { error: `Could not create profile: ${msg}` },
       { status: 500 },
@@ -238,9 +240,14 @@ export async function POST(req: NextRequest) {
         target_lang: p.target_lang,
       },
     });
-    // Cleanup user to avoid orphan accounts.
-    await supabase.from("profiles").delete().eq("id", userId).catch(() => undefined);
-    await supabase.auth.admin.deleteUser(userId).catch(() => undefined);
+    // Cleanup to avoid orphan accounts. Best-effort — these failures are
+    // already in a degraded state, so swallow secondary errors.
+    try {
+      await supabase.from("profiles").delete().eq("id", userId);
+    } catch { /* best-effort */ }
+    try {
+      await supabase.auth.admin.deleteUser(userId);
+    } catch { /* best-effort */ }
     return NextResponse.json(
       { error: `Could not create test job: ${msg}` },
       { status: 500 },
