@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -6,7 +7,16 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       {/* Brand panel */}
       <div className="hidden lg:flex flex-col justify-between p-10 text-white"
            style={{ background: "linear-gradient(135deg, var(--color-navy) 0%, var(--color-navy-700) 60%, var(--color-teal-700) 100%)" }}>
-        <Link href="/" className="text-2xl font-extrabold tracking-tight">Cethos<span className="text-[color:var(--color-teal-light)]">.</span></Link>
+        <Link href="/" className="inline-block">
+          <Image
+            src="/cethos-logo.png"
+            alt="Cethos"
+            width={180}
+            height={40}
+            priority
+            className="h-9 w-auto"
+          />
+        </Link>
         <div>
           <h1 className="text-4xl font-extrabold leading-tight max-w-md">Where translators do their best work.</h1>
           <p className="mt-4 text-base text-white/75 max-w-md">

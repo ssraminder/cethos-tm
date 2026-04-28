@@ -4,6 +4,12 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Cethos CAT — Translation, evolved",
   description: "Translation memory, terminology, MT, and QA in one editor.",
+  icons: {
+    icon: [
+      { url: "/cethos-favicon.png", type: "image/png" },
+    ],
+    apple: "/cethos-favicon.png",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
