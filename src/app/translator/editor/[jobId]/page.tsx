@@ -4,7 +4,6 @@ import { getServiceClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { getExactMatchesForJob } from "@/lib/tm/match";
 import { getTermHitsForJob } from "@/lib/termbase/hits";
-import { LeftSearchAside } from "./LeftSearchAside";
 import { EditorBodyClient } from "./EditorBodyClient";
 import { HighlightedSource } from "./HighlightedSource";
 import { RealtimeJobStatus } from "@/components/RealtimeJobStatus";
@@ -28,7 +27,6 @@ export default async function EditorPage({
   const isStaff = me.role === "admin" || me.role === "pm";
   if (!isAssignedToMe && !isStaff && job.reviewer_id !== me.id) notFound();
 
-  // Pretty language names for the column headers (e.g. "English" vs "en").
   const { data: jobLangs } = await supabase
     .from("languages")
     .select("code, name")
@@ -64,7 +62,6 @@ export default async function EditorPage({
   }
   const pct = counts.total > 0 ? Math.round((counts.confirmed / counts.total) * 100) : 0;
 
-  // Pre-compute leverage data in parallel round-trips.
   const segIdsForFindings = ((await supabase.from("segments").select("id").eq("job_id", jobId)).data ?? []).map((r) => r.id);
   const [exactMatches, termHits, findingsRes] = await Promise.all([
     getExactMatchesForJob(jobId),
@@ -86,21 +83,13 @@ export default async function EditorPage({
 
   const { data: attachedTms } = await supabase
     .from("job_resources")
-    .select("resource_id, priority, translation_memories!inner(name, source_lang, target_lang)")
+    .select("resource_id")
     .eq("job_id", jobId)
-    .eq("resource_type", "tm")
-    .order("priority", { ascending: true });
-
-  const { data: attachedTbs } = await supabase
-    .from("job_resources")
-    .select("resource_id, priority, termbases!inner(name, languages)")
-    .eq("job_id", jobId)
-    .eq("resource_type", "termbase")
-    .order("priority", { ascending: true });
+    .eq("resource_type", "tm");
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: "var(--color-bg-app)" }}>
-      <header className="h-14 bg-white border-b border-[color:var(--color-border)] px-4 flex items-center gap-4">
+    <div className="h-full flex flex-col min-h-0">
+      <header className="h-14 bg-white border-b border-[color:var(--color-border)] px-4 flex items-center gap-4 shrink-0">
         <Link href={isStaff ? `/pm/jobs/${job.id}` : "/translator"} className="text-[color:var(--color-slate-500)] hover:text-[color:var(--color-navy)] text-sm">← {isStaff ? "Job" : "Inbox"}</Link>
         <div className="text-sm flex items-center gap-2">
           <span className="text-[color:var(--color-slate-500)]">Job</span>
@@ -147,86 +136,30 @@ export default async function EditorPage({
         </span>
       </div>
 
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[260px_1fr_360px] min-h-0">
-        <LeftSearchAside jobId={jobId} />
-        <div className="bg-white border-r border-[color:var(--color-border)] overflow-hidden">
-          <EditorBodyClient
-            jobId={jobId}
-            readOnly={readOnly}
-            showMt={isStaff}
-            sourceLangLabel={sourceLangName ?? job.source_lang}
-            targetLangLabel={targetLangName ?? job.target_lang}
-            segments={(segments ?? []) as never}
-            highlightedSourceById={Object.fromEntries(
-              (segments ?? []).map((s) => {
-                const hits = termHits.get(s.id) ?? [];
-                return [s.id, <HighlightedSource key={s.id} source={s.source_text} hits={hits} />];
-              }),
-            )}
-            topMatchById={Object.fromEntries(
-              (segments ?? []).map((s) => [s.id, exactMatches.get(s.id) ?? null]),
-            )}
-            termHitsById={Object.fromEntries(
-              (segments ?? []).map((s) => [s.id, termHits.get(s.id) ?? []]),
-            )}
-            qaFindingsById={Object.fromEntries(
-              (segments ?? []).map((s) => [s.id, findingsBySeg.get(s.id) ?? []]),
-            )}
-          />
-        </div>
-
-        <aside className="overflow-y-auto bg-white p-5 hidden lg:block">
-          <div className="text-[10px] uppercase tracking-wider font-bold text-[color:var(--color-slate-500)] mb-2">Attached translation memories</div>
-          {!attachedTms || attachedTms.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-[color:var(--color-border)] p-4 text-sm text-[color:var(--color-slate-500)]">
-              No TMs attached. {isStaff && (
-                <Link href={`/pm/jobs/${job.id}`} className="text-[color:var(--color-teal-700)] font-semibold hover:underline ml-1">
-                  Attach from job page →
-                </Link>
-              )}
-            </div>
-          ) : (
-            <ul className="space-y-1.5">
-              {attachedTms.map((r) => {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const tm = (r as any).translation_memories;
-                return (
-                  <li key={r.resource_id} className="rounded-md border border-[color:var(--color-border)] p-2 text-sm">
-                    <div className="font-semibold text-[color:var(--color-navy)] truncate">{tm.name}</div>
-                    <div className="text-[10px] text-[color:var(--color-slate-500)] mono">{tm.source_lang} → {tm.target_lang} · priority {r.priority}</div>
-                  </li>
-                );
-              })}
-            </ul>
+      <div className="flex-1 min-h-0">
+        <EditorBodyClient
+          jobId={jobId}
+          readOnly={readOnly}
+          showMt={isStaff}
+          sourceLangLabel={sourceLangName ?? job.source_lang}
+          targetLangLabel={targetLangName ?? job.target_lang}
+          segments={(segments ?? []) as never}
+          highlightedSourceById={Object.fromEntries(
+            (segments ?? []).map((s) => {
+              const hits = termHits.get(s.id) ?? [];
+              return [s.id, <HighlightedSource key={s.id} source={s.source_text} hits={hits} />];
+            }),
           )}
-
-          <div className="mt-6 text-[10px] uppercase tracking-wider font-bold text-[color:var(--color-slate-500)] mb-2">Attached termbases</div>
-          {!attachedTbs || attachedTbs.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-[color:var(--color-border)] p-3 text-xs text-[color:var(--color-slate-500)] mb-4">
-              No termbases attached.
-            </div>
-          ) : (
-            <ul className="space-y-1.5 mb-4">
-              {attachedTbs.map((r) => {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const tb = (r as any).termbases;
-                return (
-                  <li key={r.resource_id} className="rounded-md border border-[color:var(--color-border)] p-2 text-sm">
-                    <div className="font-semibold text-[color:var(--color-navy)] truncate">{tb.name}</div>
-                    <div className="text-[10px] text-[color:var(--color-slate-500)] mono">{(tb.languages ?? []).join(", ")}</div>
-                  </li>
-                );
-              })}
-            </ul>
+          topMatchById={Object.fromEntries(
+            (segments ?? []).map((s) => [s.id, exactMatches.get(s.id) ?? null]),
           )}
-
-          <div className="text-[10px] uppercase tracking-wider font-bold text-[color:var(--color-slate-500)] mb-2">Job</div>
-          <div className="text-sm space-y-1">
-            <div className="flex justify-between"><span className="text-[color:var(--color-slate-500)]">Status</span><span className="capitalize">{job.status.replace("_", " ")}</span></div>
-            <div className="flex justify-between"><span className="text-[color:var(--color-slate-500)]">Words</span><span>{job.word_count.toLocaleString()}</span></div>
-            <div className="flex justify-between"><span className="text-[color:var(--color-slate-500)]">Segments</span><span>{job.segment_count}</span></div>
-          </div>
-        </aside>
+          termHitsById={Object.fromEntries(
+            (segments ?? []).map((s) => [s.id, termHits.get(s.id) ?? []]),
+          )}
+          qaFindingsById={Object.fromEntries(
+            (segments ?? []).map((s) => [s.id, findingsBySeg.get(s.id) ?? []]),
+          )}
+        />
       </div>
     </div>
   );

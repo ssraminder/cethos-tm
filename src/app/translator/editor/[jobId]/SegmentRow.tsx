@@ -5,7 +5,7 @@ import { saveSegmentAction, getMtAction } from "./actions";
 import type { TmMatch } from "@/lib/tm/match";
 import type { TermHit } from "@/lib/termbase/hits";
 import type { MtSuggestion } from "@/lib/mt";
-import { TM_INSERT_EVENT } from "./BottomMatchPanel";
+import { TM_INSERT_EVENT } from "./RightAside";
 
 interface Segment {
   id: string;
@@ -182,7 +182,7 @@ export function SegmentRow({
   showMt: boolean;
   /**
    * Called when this row becomes the focused/active segment (focus or click).
-   * The wrapper uses this to drive the BottomMatchPanel's lookup.
+   * The wrapper uses this to drive the right pane's lookup.
    */
   onActivate?: (segment: { id: string; source_text: string }) => void;
 }) {
@@ -257,7 +257,7 @@ export function SegmentRow({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Listen for "insert this match" events from the BottomMatchPanel.
+  // Listen for "insert this match" events from the right pane.
   // The bottom panel is decoupled from individual SegmentRow refs; it
   // dispatches a window CustomEvent with the active segment id + the
   // chosen match. We pick up only events that target our segment.
