@@ -218,6 +218,9 @@ export async function POST(req: NextRequest) {
       segments: jobResult.segments,
       words: jobResult.words,
     };
+
+    // Mark this job as a test so the Deliver pipeline skips Opus QA.
+    await supabase.from("jobs").update({ job_class: "test" }).eq("id", jobResult.job_id);
   }
 
   // ---- Mint a fresh single-use signin token for this test ----

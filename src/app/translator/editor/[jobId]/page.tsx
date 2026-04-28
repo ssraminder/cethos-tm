@@ -7,6 +7,8 @@ import { getTermHitsForJob } from "@/lib/termbase/hits";
 import { EditorBodyClient } from "./EditorBodyClient";
 import { HighlightedSource } from "./HighlightedSource";
 import { RealtimeJobStatus } from "@/components/RealtimeJobStatus";
+import { DeliverButton } from "./DeliverButton";
+import { QaReviewPanel, type QaReviewFinding } from "./QaReviewPanel";
 
 export default async function EditorPage({
   params,
@@ -38,6 +40,10 @@ export default async function EditorPage({
   const targetLangName = langNameByCode.get(job.target_lang) ?? null;
 
   const readOnly = !isAssignedToMe || (job.status !== "assigned" && job.status !== "in_progress");
+
+  const jobClass: "production" | "test" = (job.job_class as "production" | "test" | null) ?? "production";
+  const inQaReview = job.status === "qa_review";
+  const inQaRunning = job.status === "qa_running";
 
   let q = supabase
     .from("segments")
@@ -87,6 +93,68 @@ export default async function EditorPage({
     .eq("job_id", jobId)
     .eq("resource_type", "tm");
 
+  // QA review-pane data: when job is in qa_review, load all unresolved
+  // findings linked to a run (or deterministic ones).
+  const reviewFindings: QaReviewFinding[] = [];
+  if (inQaReview && segIdsForFindings.length > 0) {
+    const segById = new Map<string, { seq: number; source: string; target: string }>();
+    for (const s of (segments ?? []) as Array<{ id: string; seq: number; source_text: string; target_text: string }>) {
+      segById.set(s.id, { seq: s.seq, source: s.source_text, target: s.target_text });
+    }
+    const { data: rf } = await supabase
+      .from("qa_findings")
+      .select("id, segment_id, rule, severity, category, message, source, suggested_target, ignored, resolved_at")
+      .in("segment_id", segIdsForFindings)
+      .eq("ignored", false)
+      .is("resolved_at", null);
+    for (const f of (rf ?? []) as Array<{
+      id: string;
+      segment_id: string;
+      rule: string;
+      severity: "critical" | "major" | "minor";
+      category: string | null;
+      message: string;
+      source: string;
+      suggested_target: string | null;
+    }>) {
+      const seg = segById.get(f.segment_id);
+      if (!seg) continue;
+      reviewFindings.push({
+        id: f.id,
+        segment_id: f.segment_id,
+        segment_seq: seg.seq,
+        source_text: seg.source,
+        target_text: seg.target,
+        rule: f.rule,
+        severity: f.severity,
+        category: f.category,
+        message: f.message,
+        source: f.source,
+        suggested_target: f.suggested_target,
+      });
+    }
+    reviewFindings.sort((a, b) => {
+      const order: Record<string, number> = { critical: 0, major: 1, minor: 2 };
+      const s = (order[a.severity] ?? 9) - (order[b.severity] ?? 9);
+      return s !== 0 ? s : a.segment_seq - b.segment_seq;
+    });
+  }
+
+  const unresolvedCriticalCount = reviewFindings.filter((f) => f.severity === "critical").length;
+
+  // Deliver button is shown only to the assignee, and only when all
+  // segments are confirmed (job is ready to leave in_progress).
+  const deliverEnabled =
+    isAssignedToMe &&
+    !inQaRunning &&
+    !inQaReview &&
+    job.status !== "delivered" &&
+    job.status !== "submitted" &&
+    counts.confirmed === counts.total &&
+    counts.total > 0;
+  // Rough cost estimate at ~$0.08/1k words cached.
+  const estimatedCostUsd = Math.max(0.05, (job.word_count / 1000) * 0.08);
+
   return (
     <div className="h-full flex flex-col min-h-0">
       <header className="h-14 bg-white border-b border-[color:var(--color-border)] px-4 flex items-center gap-4 shrink-0">
@@ -97,6 +165,9 @@ export default async function EditorPage({
           <span className="text-[color:var(--color-slate-500)]">·</span>
           <span className="font-medium text-[color:var(--color-navy)]">{job.source_lang} → {job.target_lang}</span>
           {readOnly && <span className="ml-2 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-[color:var(--color-slate-200)] text-[color:var(--color-slate-700)]">Read-only</span>}
+          {jobClass === "test" && <span className="ml-2 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-[color:var(--color-amber-100)] text-[color:var(--color-amber-800)]">Test</span>}
+          {inQaRunning && <span className="ml-2 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-[color:var(--color-amber-100)] text-[color:var(--color-amber-800)]">QA running…</span>}
+          {inQaReview && <span className="ml-2 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-[color:var(--color-rose-100)] text-[color:var(--color-rose-800)]">QA review</span>}
         </div>
         <div className="flex-1" />
         <div className="flex items-center gap-3">
@@ -105,8 +176,23 @@ export default async function EditorPage({
           <div className="w-32 h-1.5 rounded-full bg-[color:var(--color-slate-100)] overflow-hidden">
             <div className="h-full bg-[color:var(--color-emerald-500)]" style={{ width: `${pct}%` }} />
           </div>
+          <DeliverButton
+            jobId={jobId}
+            jobClass={jobClass}
+            enabled={deliverEnabled}
+            estimatedCostUsd={estimatedCostUsd}
+            totalSegments={counts.total}
+          />
         </div>
       </header>
+
+      {inQaReview && (
+        <QaReviewPanel
+          jobId={jobId}
+          findings={reviewFindings}
+          unresolvedCriticalCount={unresolvedCriticalCount}
+        />
+      )}
 
       <div className="px-4 py-2 bg-white border-b border-[color:var(--color-border-soft)] flex items-center gap-2 text-xs">
         <span className="text-[color:var(--color-slate-500)] font-semibold uppercase tracking-wide">Filter:</span>
