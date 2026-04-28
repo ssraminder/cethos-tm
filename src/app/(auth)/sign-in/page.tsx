@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { signInAction } from "./actions";
 
 export default async function SignInPage({
@@ -9,8 +10,18 @@ export default async function SignInPage({
   const sp = await searchParams;
   return (
     <div className="bg-white rounded-xl shadow-[var(--shadow-soft)] border border-[color:var(--color-border)] p-8">
-      <h2 className="text-xl font-bold text-[color:var(--color-navy)]">Sign in to Cethos CAT</h2>
-      <p className="text-sm text-[color:var(--color-slate-500)] mt-1">Translation memory, terminology, MT, and QA.</p>
+      <div className="flex justify-center mb-5">
+        <Image
+          src="/cethos-logo.svg"
+          alt="Cethos"
+          width={140}
+          height={36}
+          priority
+          className="h-9 w-auto"
+        />
+      </div>
+      <h2 className="text-xl font-bold text-[color:var(--color-navy)] text-center">Sign in to Cethos CAT</h2>
+      <p className="text-sm text-[color:var(--color-slate-500)] mt-1 text-center">Translation memory, terminology, MT, and QA.</p>
 
       {sp.error && (
         <div className="mt-4 text-sm rounded-md border border-[color:var(--color-rose-100)] bg-[color:var(--color-rose-50)] text-[color:var(--color-rose-600)] px-3 py-2">
