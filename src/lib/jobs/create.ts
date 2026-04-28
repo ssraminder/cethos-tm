@@ -4,6 +4,7 @@ import { detectFormat, extractText, type SupportedFormat } from "@/lib/jobs/extr
 import { segmentText, totalWords, type Segment } from "@/lib/jobs/segmentation";
 import { parseXliff } from "@/lib/xliff/parse";
 import { generateJobReference } from "@/lib/jobs/reference";
+import { getOrCreateDefaultTm } from "@/lib/tm/default-tm";
 
 const STORAGE_BUCKET = "cat-source-files";
 
@@ -159,9 +160,35 @@ export async function createJobFromBuffer(input: CreateJobInput): Promise<Create
     }
   }
 
-  // Attach TMs / termbases if provided.
+  // Attach TMs / termbases. Always include the default TM for this language
+  // pair (auto-created on first use) so confirmed segments accumulate into a
+  // leverageable corpus across jobs. Explicit `tm_ids` from input are added
+  // alongside it at higher priority (lower number = higher priority); the
+  // default TM gets priority 1000 so it's the catch-all fallback.
   const resourceRows: Array<{ job_id: string; resource_type: string; resource_id: string; priority: number }> = [];
-  for (const tm_id of input.tm_ids ?? []) resourceRows.push({ job_id: jobId, resource_type: "tm", resource_id: tm_id, priority: 100 });
+
+  let defaultTmId: string | null = null;
+  try {
+    defaultTmId = await getOrCreateDefaultTm({
+      source_lang: actualSource,
+      target_lang: actualTarget,
+      created_by: input.created_by,
+    });
+  } catch (e) {
+    // Non-fatal: log + continue without a default TM. Job still works, just
+    // without auto-leverage. Caller can attach a TM manually later.
+    console.error(
+      `[createJobFromBuffer] default TM lookup/create failed (${actualSource}->${actualTarget}):`,
+      e instanceof Error ? e.message : String(e),
+    );
+  }
+  if (defaultTmId) {
+    resourceRows.push({ job_id: jobId, resource_type: "tm", resource_id: defaultTmId, priority: 1000 });
+  }
+  for (const tm_id of input.tm_ids ?? []) {
+    if (tm_id === defaultTmId) continue; // don't double-attach
+    resourceRows.push({ job_id: jobId, resource_type: "tm", resource_id: tm_id, priority: 100 });
+  }
   for (const tb_id of input.termbase_ids ?? []) resourceRows.push({ job_id: jobId, resource_type: "termbase", resource_id: tb_id, priority: 100 });
   if (resourceRows.length > 0) {
     await supabase.from("job_resources").insert(resourceRows);

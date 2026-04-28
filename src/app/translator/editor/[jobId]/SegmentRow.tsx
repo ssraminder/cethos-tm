@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, type ReactNode } from "react";
+import { useEffect, useState, useTransition, type ReactNode } from "react";
 import { saveSegmentAction, findMatchesAction, getMtAction } from "./actions";
 import type { TmMatch } from "@/lib/tm/match";
 import type { TermHit } from "@/lib/termbase/hits";
@@ -44,6 +44,7 @@ export function SegmentRow({
   termHits,
   highlightedSource,
   qaFindings,
+  showMt,
 }: {
   segment: Segment;
   readOnly: boolean;
@@ -52,6 +53,13 @@ export function SegmentRow({
   termHits: TermHit[];
   highlightedSource: ReactNode;
   qaFindings: QaFindingDisplay[];
+  /**
+   * Whether the MT panel ("Get MT" button + suggestion box) is visible.
+   * Hidden by default for translators; PMs/admins still see it. When MT is
+   * needed for vendor-facing jobs, we'll prepopulate target_text directly
+   * at job-creation time.
+   */
+  showMt: boolean;
 }) {
   const [target, setTarget] = useState(segment.target_text);
   const [status, setStatus] = useState(segment.status);
@@ -86,6 +94,22 @@ export function SegmentRow({
     if (res.ok) setMatches(res.matches);
     else setError(res.error);
   }
+
+  // Auto-load fuzzy matches once on mount so the translator doesn't have
+  // to click "Find TM matches" per row. The page-load topMatch covers the
+  // ≥1.0 exact case; this fills in everything below 1.0.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const res = await findMatchesAction({ job_id: jobId, source_text: segment.source_text });
+      if (cancelled) return;
+      if (res.ok) setMatches(res.matches);
+      // Silent on error — match panel just stays empty. Keeps the editor
+      // clean for the common no-attached-TM-but-not-actually-empty case.
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobId, segment.id]);
 
   async function loadMt() {
     setMtLoading(true);
@@ -166,11 +190,13 @@ export function SegmentRow({
           {!readOnly && (
             <>
               <button type="button" onClick={loadMatches} className="text-[color:var(--color-teal-700)] hover:underline">
-                {matchesLoading ? "Searching…" : matches ? "Refresh matches" : "Find TM matches"}
+                {matchesLoading ? "Searching…" : "Refresh matches"}
               </button>
-              <button type="button" onClick={loadMt} className="text-[color:var(--color-purple-600)] hover:underline">
-                {mtLoading ? "MT…" : mt ? "Re-run MT" : "Get MT"}
-              </button>
+              {showMt && (
+                <button type="button" onClick={loadMt} className="text-[color:var(--color-purple-600)] hover:underline">
+                  {mtLoading ? "MT…" : mt ? "Re-run MT" : "Get MT"}
+                </button>
+              )}
             </>
           )}
         </div>
@@ -204,10 +230,10 @@ export function SegmentRow({
           </ul>
         )}
         {matches && matches.length === 0 && (
-          <div className="mt-2 text-[10px] text-[color:var(--color-slate-500)] font-sans italic">No matches found in attached TMs.</div>
+          <div className="mt-2 text-[10px] text-[color:var(--color-slate-500)] font-sans italic">No matches yet — confirm a few segments and they'll start appearing here.</div>
         )}
 
-        {mt && (
+        {showMt && mt && (
           <div className="mt-2 rounded border border-[color:var(--color-purple-100)] bg-[color:var(--color-purple-100)]/40 p-2 font-sans">
             <div className="flex items-center gap-2 mb-1">
               <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-[color:var(--color-purple-500)] text-white uppercase">{mt.engine}</span>

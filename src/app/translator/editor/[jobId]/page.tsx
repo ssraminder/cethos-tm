@@ -161,6 +161,7 @@ export default async function EditorPage({
                     termHits={hits}
                     highlightedSource={<HighlightedSource source={s.source_text} hits={hits} />}
                     qaFindings={findingsBySeg.get(s.id) ?? []}
+                    showMt={isStaff}
                   />
                 );
               })}

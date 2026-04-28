@@ -5,6 +5,7 @@ import { z } from "zod";
 import { getServiceClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { findMatchesForSegment, type TmMatch } from "@/lib/tm/match";
+import { upsertTmUnit } from "@/lib/tm/default-tm";
 import { translate, type MtSuggestion } from "@/lib/mt";
 
 const SaveSchema = z.object({
@@ -29,7 +30,7 @@ export async function saveSegmentAction(formData: FormData): Promise<SaveResult>
 
   const { data: seg } = await supabase
     .from("segments")
-    .select("id, job_id, status, jobs!inner(assigned_to, status)")
+    .select("id, job_id, source_text, status, jobs!inner(assigned_to, status, source_lang, target_lang)")
     .eq("id", segment_id)
     .maybeSingle();
   if (!seg) return { ok: false, error: "Segment not found" };
@@ -61,6 +62,35 @@ export async function saveSegmentAction(formData: FormData): Promise<SaveResult>
 
   if (job.status === "assigned" && trimmed.length > 0) {
     await supabase.from("jobs").update({ status: "in_progress" }).eq("id", seg!.job_id);
+  }
+
+  // ---- Write the source/target pair into every TM attached to this job ----
+  // Confirmed segments enrich the TM corpus so future jobs in the same
+  // language pair get fuzzy/exact matches. We write to *every* attached TM
+  // (typically just the default one) — admins who attached a client-specific
+  // TM at higher priority will see their pair land there too.
+  if (wantConfirm) {
+    const { data: attachedTms } = await supabase
+      .from("job_resources")
+      .select("resource_id")
+      .eq("job_id", seg!.job_id)
+      .eq("resource_type", "tm");
+    const tmIds = (attachedTms ?? []).map(
+      (r) => (r as { resource_id: string }).resource_id,
+    );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sourceText = (seg as any).source_text as string;
+    if (sourceText && trimmed) {
+      await Promise.all(
+        tmIds.map((tm_id) =>
+          upsertTmUnit({
+            tm_id,
+            source_text: sourceText,
+            target_text: trimmed,
+          }),
+        ),
+      );
+    }
   }
 
   revalidatePath(`/translator/editor/${seg!.job_id}`);

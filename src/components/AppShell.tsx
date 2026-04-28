@@ -84,7 +84,6 @@ export function AppShell({ user, nav, brand, brandTagline, breadcrumb, children 
         <header className="h-14 bg-white border-b border-[color:var(--color-border)] px-6 flex items-center gap-4">
           <div className="text-sm text-[color:var(--color-slate-500)]">{breadcrumb}</div>
           <div className="flex-1" />
-          <div className="text-xs text-[color:var(--color-slate-500)]">⌘K to search</div>
         </header>
         <main className="flex-1 overflow-y-auto">
           <div className="px-8 py-6 max-w-[1400px]">{children}</div>
