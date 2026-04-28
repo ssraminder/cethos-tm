@@ -58,7 +58,28 @@ export async function signInAction(formData: FormData): Promise<void> {
     redirect(`/sign-in?error=${encodeURIComponent(msg)}`);
   }
 
-  // Issue OTP and send email.
+  // MFA gate. Disposable test accounts (test_provisioning auth_source) have
+  // mfa_required=false and cannot receive OTPs at their @cethos.test address,
+  // so they sign in directly. Real users (mfa_required=true on the profile)
+  // continue through the OTP/verify flow.
+  if (profile!.mfa_required === false) {
+    // Set the MFA cookie so /translator + /admin etc. don't bounce them back
+    // to /verify.
+    const { setMfaCookie } = await import("@/lib/auth/mfa-cookie");
+    await setMfaCookie(profile!.id);
+    await audit({
+      category: "auth",
+      action: "sign_in_mfa_skipped",
+      actorId: profile!.id,
+      actorEmail: email,
+      ip,
+      userAgent: ua,
+    });
+    const target = next && next.startsWith("/") ? next : "/translator";
+    redirect(target);
+  }
+
+  // Issue OTP and send email (real users with mfa_required=true).
   const { code } = await issueOtp({ email, purpose: "signin_mfa", userId: profile!.id, ip, userAgent: ua });
   const msg = renderOtpEmail({ code, purpose: "signin_mfa", minutesValid: 10 });
   await sendEmail({ to: email, subject: msg.subject, text: msg.text, html: msg.html });
