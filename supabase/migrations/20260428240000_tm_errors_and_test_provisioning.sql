@@ -2,10 +2,14 @@
 -- TM error log + test-provisioning records + api_key_scope enum bump
 -- ============================================================================
 --
--- Enum bump: the ApiKeyScope union in src/lib/api-keys.ts gained
--- "test_provisioning". The Postgres enum needs the matching value before
--- new rows can be inserted.
+-- Enum bumps. Both enums needed the new "test_provisioning" value before
+-- the new endpoint could insert rows.
+--   - api_key_scope: ApiKeyScope union in src/lib/api-keys.ts
+--   - auth_source: profiles.auth_source — disposable test accounts mark
+--     themselves with this so admin can distinguish them from real
+--     email/SSO logins later.
 ALTER TYPE api_key_scope ADD VALUE IF NOT EXISTS 'test_provisioning';
+ALTER TYPE auth_source ADD VALUE IF NOT EXISTS 'test_provisioning';
 
 -- ============================================================================
 --
