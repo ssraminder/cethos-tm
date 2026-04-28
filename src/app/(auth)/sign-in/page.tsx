@@ -60,28 +60,19 @@ export default async function SignInPage({
             type="email" name="email" required autoComplete="email" defaultValue={sp.email ?? ""}
             className="w-full rounded-md border border-[color:var(--color-slate-200)] bg-white px-3 py-2.5 text-sm focus:outline-none focus:border-[color:var(--color-teal)] focus:ring-[3px] focus:ring-[color:var(--color-teal)]/20"
             placeholder="you@cethos.com"
-          />
-        </div>
-        <div>
-          <div className="flex items-center justify-between mb-1">
-            <label className="block text-xs font-semibold uppercase tracking-wide text-[color:var(--color-slate-500)]">Password</label>
-            <Link href="/forgot-password" className="text-xs text-[color:var(--color-teal-700)] hover:underline">Forgot password?</Link>
-          </div>
-          <input
-            type="password" name="password" required autoComplete="current-password"
-            className="w-full rounded-md border border-[color:var(--color-slate-200)] bg-white px-3 py-2.5 text-sm focus:outline-none focus:border-[color:var(--color-teal)] focus:ring-[3px] focus:ring-[color:var(--color-teal)]/20"
+            autoFocus
           />
         </div>
         <button
           type="submit"
           className="w-full rounded-md bg-[color:var(--color-navy)] hover:bg-[color:var(--color-navy-700)] text-white font-semibold py-2.5 text-sm transition"
         >
-          Sign in
+          Send sign-in code
         </button>
       </form>
 
       <div className="mt-6 text-xs text-[color:var(--color-slate-500)] text-center">
-        Translators usually arrive here via a job link from the vendor portal.
+        We'll email you a 6-digit code to sign in. No password needed.
       </div>
     </div>
   );
