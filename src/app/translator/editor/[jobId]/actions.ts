@@ -84,6 +84,12 @@ export async function saveSegmentAction(formData: FormData): Promise<SaveResult>
   // language pair get fuzzy/exact matches. We write to *every* attached TM
   // (typically just the default one) — admins who attached a client-specific
   // TM at higher priority will see their pair land there too.
+  //
+  // Provenance: each TM row carries job_id + segment_id + source_lang +
+  // target_lang + confirmed_by + confirmed_at in meta. Re-confirming the
+  // same segment with a NEW translation deletes the prior TM row from
+  // (tm, job, segment) and inserts fresh — one canonical TM entry per
+  // segment, no duplicate accumulation.
   if (wantConfirm) {
     const { data: attachedTms } = await supabase
       .from("job_resources")
@@ -96,12 +102,21 @@ export async function saveSegmentAction(formData: FormData): Promise<SaveResult>
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sourceText = (seg as any).source_text as string;
     if (sourceText && trimmed) {
+      const provenance = {
+        job_id: seg!.job_id as string,
+        segment_id: segment_id,
+        source_lang: job.source_lang as string,
+        target_lang: job.target_lang as string,
+        confirmed_by: me.id,
+        confirmed_at: new Date().toISOString(),
+      };
       await Promise.all(
         tmIds.map((tm_id) =>
           upsertTmUnit({
             tm_id,
             source_text: sourceText,
             target_text: trimmed,
+            provenance,
           }),
         ),
       );

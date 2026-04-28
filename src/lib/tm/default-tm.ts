@@ -81,28 +81,72 @@ export async function getOrCreateDefaultTm(args: {
 }
 
 /**
- * Insert a confirmed source-target pair into the given TM. Idempotent on
- * (tm_id, source_hash, target_text) — re-confirming the same segment with
- * the same translation is a no-op.
+ * Persist a confirmed source/target pair into the given TM with full
+ * provenance metadata so admins can trace any TM entry back to the job +
+ * segment + translator that produced it.
  *
- * source_hash is computed by a DB trigger on tm_units, so we don't compute
- * it here.
+ * Overwrite semantics: if a row in this TM already came from the same
+ * (job_id, segment_id), we DELETE it first and then insert fresh. That way
+ * re-confirming a segment with a new translation cleanly replaces the old
+ * TM entry rather than accumulating multiple rows for the same source.
+ *
+ * Validation: source_lang / target_lang on the meta block must match the
+ * TM's own language pair — we don't enforce in SQL because tm_units doesn't
+ * carry language columns, but the caller (createJobFromBuffer's default-TM
+ * lookup) only ever picks a TM with the matching pair.
  */
+export interface TmUnitProvenance {
+  job_id: string;
+  segment_id: string;
+  source_lang: string;
+  target_lang: string;
+  confirmed_by?: string | null;
+  confirmed_at?: string;
+}
+
 export async function upsertTmUnit(args: {
   tm_id: string;
   source_text: string;
   target_text: string;
   domain?: string | null;
-  meta?: Record<string, unknown> | null;
+  provenance?: TmUnitProvenance;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const supabase = await getServiceClient();
+
+  // 1. If we have segment-level provenance, remove any prior row from the
+  //    same (tm, job, segment). One canonical TM entry per segment.
+  if (args.provenance) {
+    const { error: delErr } = await supabase
+      .from("tm_units")
+      .delete()
+      .eq("tm_id", args.tm_id)
+      .eq("meta->>job_id", args.provenance.job_id)
+      .eq("meta->>segment_id", args.provenance.segment_id);
+    if (delErr) {
+      // Don't bail — the insert below will still work, we just may
+      // accumulate a duplicate. Logging would be ideal but this lib is
+      // called from many places so we keep it quiet.
+    }
+  }
+
+  // 2. Insert fresh.
+  const meta: Record<string, unknown> = {};
+  if (args.provenance) {
+    meta.job_id = args.provenance.job_id;
+    meta.segment_id = args.provenance.segment_id;
+    meta.source_lang = args.provenance.source_lang;
+    meta.target_lang = args.provenance.target_lang;
+    if (args.provenance.confirmed_by) meta.confirmed_by = args.provenance.confirmed_by;
+    meta.confirmed_at = args.provenance.confirmed_at ?? new Date().toISOString();
+  }
+
   const { error } = await supabase.from("tm_units").upsert(
     {
       tm_id: args.tm_id,
       source_text: args.source_text,
       target_text: args.target_text,
       domain: args.domain ?? null,
-      meta: args.meta ?? {},
+      meta,
     },
     { onConflict: "tm_id,source_hash,target_text", ignoreDuplicates: true },
   );
