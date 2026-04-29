@@ -7,13 +7,11 @@ export function DeliverButton({
   jobId,
   jobClass,
   enabled,
-  estimatedCostUsd,
   totalSegments,
 }: {
   jobId: string;
   jobClass: "production" | "test";
   enabled: boolean;
-  estimatedCostUsd: number;
   totalSegments: number;
 }) {
   const [isPending, startTransition] = useTransition();
@@ -22,8 +20,8 @@ export function DeliverButton({
   function onClick() {
     const isTest = jobClass === "test";
     const msg = isTest
-      ? "Submit this test for grading? (No QA will run.)"
-      : `Run QA and deliver?\n\n~${totalSegments} segments. Estimated cost: $${estimatedCostUsd.toFixed(2)}.`;
+      ? "Submit this test for grading?"
+      : `Run QA and deliver? ${totalSegments} segment${totalSegments === 1 ? "" : "s"}.`;
     if (!window.confirm(msg)) return;
     setError(null);
     startTransition(async () => {

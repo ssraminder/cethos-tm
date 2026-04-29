@@ -152,8 +152,6 @@ export default async function EditorPage({
     job.status !== "submitted" &&
     counts.confirmed === counts.total &&
     counts.total > 0;
-  // Rough cost estimate at ~$0.08/1k words cached.
-  const estimatedCostUsd = Math.max(0.05, (job.word_count / 1000) * 0.08);
 
   return (
     <div className="h-full flex flex-col min-h-0">
@@ -180,7 +178,6 @@ export default async function EditorPage({
             jobId={jobId}
             jobClass={jobClass}
             enabled={deliverEnabled}
-            estimatedCostUsd={estimatedCostUsd}
             totalSegments={counts.total}
           />
         </div>
