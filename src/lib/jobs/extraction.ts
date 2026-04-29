@@ -1,4 +1,9 @@
 import mammoth from "mammoth";
+import {
+  extractInlineTags,
+  splitHtmlIntoParagraphs,
+  type ParagraphSegment,
+} from "./inline-tags";
 
 export type SupportedFormat = "txt" | "md" | "html" | "docx" | "json" | "xliff" | "unknown";
 
@@ -69,5 +74,48 @@ export async function extractText(buffer: Buffer, format: SupportedFormat): Prom
     case "unknown":
     default:
       throw new Error(`Format '${format}' not yet supported for extraction.`);
+  }
+}
+
+/**
+ * Tag-preserving extraction for DOCX and HTML. Each paragraph (or table
+ * cell, list item, heading) becomes one ParagraphSegment with plain text
+ * containing {N} placeholders for any inline formatting + a tag inventory.
+ *
+ * For TXT/MD/JSON we don't have formatting to preserve — fall back to plain
+ * text and split on blank lines so each paragraph is one segment.
+ */
+export async function extractParagraphsWithTags(
+  buffer: Buffer,
+  format: SupportedFormat,
+): Promise<ParagraphSegment[]> {
+  switch (format) {
+    case "docx": {
+      const { value: html } = await mammoth.convertToHtml({ buffer });
+      return splitHtmlIntoParagraphs(html).map(extractInlineTags);
+    }
+
+    case "html": {
+      const html = buffer.toString("utf8");
+      return splitHtmlIntoParagraphs(html).map(extractInlineTags);
+    }
+
+    case "txt":
+    case "md":
+    case "json": {
+      const plain = await extractText(buffer, format);
+      return plain
+        .split(/\n{2,}/)
+        .map((p) => p.trim())
+        .filter(Boolean)
+        .map((p) => ({ plain_text: p, tags: [] }));
+    }
+
+    case "xliff":
+      throw new Error("XLIFF should be ingested via parseXliff(), not extractParagraphsWithTags().");
+
+    case "unknown":
+    default:
+      throw new Error(`Format '${format}' not yet supported for tagged extraction.`);
   }
 }

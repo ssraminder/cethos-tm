@@ -242,6 +242,24 @@ export function SegmentRow({
     setPristine({ text: segment.source_text, origin: "copied_source" });
   }
 
+  // Append the source's inline-tag placeholders to the end of the target.
+  // Useful when the translator has typed the target and just needs to
+  // re-insert the {N} tags so the source/target tag inventories match
+  // (otherwise the deterministic tag_mismatch QA rule fires).
+  const sourceTagIds = (segment.source_text.match(/\{\d+\}/g) ?? []).filter(
+    (v, i, arr) => arr.indexOf(v) === i,
+  );
+  function copyTagsToTarget() {
+    if (readOnly || sourceTagIds.length === 0) return;
+    const present = new Set((target.match(/\{\d+\}/g) ?? []));
+    const missing = sourceTagIds.filter((t) => !present.has(t));
+    if (missing.length === 0) return;
+    const sep = target.length > 0 && !/\s$/.test(target) ? " " : "";
+    const next = `${target}${sep}${missing.join(" ")}`;
+    setTarget(next);
+    setOrigin((o) => (o === "tm" || o === "mt" || o === "copied_source" ? `${o}_edited` as typeof o : o ?? "human"));
+  }
+
   // Auto-insert a 100% TM match into the target if the target is empty.
   // The page-load topMatch is the top-scored exact match for this segment.
   // Only triggers when (a) score >= 1.0, (b) the textarea is currently
@@ -480,6 +498,17 @@ export function SegmentRow({
               >
                 Copy source
               </button>
+              {sourceTagIds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={copyTagsToTarget}
+                  disabled={isPending}
+                  className="px-2 py-1 text-xs font-semibold rounded border border-[color:var(--color-teal-200)] bg-[color:var(--color-bg-blue)] text-[color:var(--color-teal-700)] hover:bg-[color:var(--color-teal-100)]"
+                  title={`Copy ${sourceTagIds.length} formatting tag${sourceTagIds.length === 1 ? "" : "s"} from source into target`}
+                >
+                  Copy tags ({sourceTagIds.length})
+                </button>
+              )}
               {topMatch && (
                 <button
                   type="button"

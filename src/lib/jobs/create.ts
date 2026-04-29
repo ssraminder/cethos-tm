@@ -1,6 +1,11 @@
 import { createHash } from "node:crypto";
 import { getServiceClient } from "@/lib/supabase/server";
-import { detectFormat, extractText, type SupportedFormat } from "@/lib/jobs/extraction";
+import {
+  detectFormat,
+  extractText,
+  extractParagraphsWithTags,
+  type SupportedFormat,
+} from "@/lib/jobs/extraction";
 import { segmentText, totalWords, type Segment } from "@/lib/jobs/segmentation";
 import { parseXliff } from "@/lib/xliff/parse";
 import { generateJobReference } from "@/lib/jobs/reference";
@@ -84,6 +89,25 @@ export async function createJobFromBuffer(input: CreateJobInput): Promise<Create
         preTargets!.set(seq, { text: u.target_text.trim(), status: isFinal ? "translated" : "draft" });
       }
       if (u.source_tags && u.source_tags.length > 0) segmentTags!.set(seq, u.source_tags);
+    });
+  } else if (format === "docx" || format === "html") {
+    // Tag-preserving path: each paragraph becomes one segment carrying its
+    // own inline-tag inventory in segments.meta.tags.
+    const paragraphs = await extractParagraphsWithTags(input.source_buffer, format);
+    if (paragraphs.length === 0) throw new Error("No translatable text found in the source.");
+    segments = [];
+    segmentTags = new Map();
+    paragraphs.forEach((p, i) => {
+      const seq = i + 1;
+      const text = p.plain_text;
+      const norm = text.normalize("NFC").replace(/\s+/g, " ").trim().toLowerCase();
+      segments.push({
+        seq,
+        source_text: text,
+        source_hash: createHash("sha256").update(norm).digest("hex"),
+        word_count: text.split(/\s+/).filter(Boolean).length,
+      });
+      if (p.tags.length > 0) segmentTags!.set(seq, p.tags);
     });
   } else {
     const plain = await extractText(input.source_buffer, format);
