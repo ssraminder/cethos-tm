@@ -1,9 +1,14 @@
 import mammoth from "mammoth";
+import JSZip from "jszip";
 import {
   extractInlineTags,
   splitHtmlIntoParagraphs,
   type ParagraphSegment,
 } from "./inline-tags";
+import {
+  extractOoxmlParagraphs,
+  type OoxmlParagraphSegment,
+} from "./ooxml-tags";
 
 export type SupportedFormat = "txt" | "md" | "html" | "docx" | "json" | "xliff" | "unknown";
 
@@ -91,6 +96,19 @@ export async function extractParagraphsWithTags(
 ): Promise<ParagraphSegment[]> {
   switch (format) {
     case "docx": {
+      // V2: walk OOXML directly so run-level formatting (bold/italic/
+      // hyperlink/br/tab) survives the round-trip back to .docx. Falls back
+      // to mammoth-HTML if the OOXML walker yields nothing (rare).
+      const ooxml = await extractDocxAsOoxml(buffer);
+      if (ooxml.length > 0) {
+        return ooxml.map((p) => ({
+          plain_text: p.plain_text,
+          // Cast: the existing ParagraphSegment.tags shape (with original_xml)
+          // and OoxmlTag both end up serialized into segments.meta.tags. The
+          // export path discriminates by reading meta.format/tag shape.
+          tags: p.tags as unknown as ParagraphSegment["tags"],
+        }));
+      }
       const { value: html } = await mammoth.convertToHtml({ buffer });
       return splitHtmlIntoParagraphs(html).map(extractInlineTags);
     }
@@ -118,4 +136,19 @@ export async function extractParagraphsWithTags(
     default:
       throw new Error(`Format '${format}' not yet supported for tagged extraction.`);
   }
+}
+
+/**
+ * DOCX-specific OOXML extraction. Reads word/document.xml from the .docx
+ * zip and walks paragraphs directly, preserving run-level formatting and
+ * hyperlink wrappers as {N} placeholders + tag inventory.
+ */
+export async function extractDocxAsOoxml(
+  buffer: Buffer,
+): Promise<OoxmlParagraphSegment[]> {
+  const zip = await JSZip.loadAsync(buffer);
+  const docFile = zip.file("word/document.xml");
+  if (!docFile) return [];
+  const xml = await docFile.async("string");
+  return extractOoxmlParagraphs(xml);
 }
