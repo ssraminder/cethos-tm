@@ -27,6 +27,7 @@ const Schema = z.object({
   assigned_to: z.string().uuid().optional().or(z.literal("")),
   deadline: z.string().optional(),
   project_id: z.string().uuid().optional().or(z.literal("")),
+  qa_enabled: z.string().optional(),
 });
 
 const STORAGE_BUCKET = "cat-source-files";
@@ -41,11 +42,13 @@ export async function createJobFromUploadAction(formData: FormData): Promise<voi
     assigned_to: formData.get("assigned_to") || undefined,
     deadline: formData.get("deadline") || undefined,
     project_id: formData.get("project_id") || undefined,
+    qa_enabled: formData.get("qa_enabled") || undefined,
   });
   if (!parsed.success) {
     redirect(`/pm/jobs/new?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid input")}`);
   }
   const { source_lang, target_lang, reference: refOverride, assigned_to, deadline, project_id } = parsed.data!;
+  const qaEnabled = parsed.data!.qa_enabled === "1";
   if (source_lang === target_lang) {
     redirect(`/pm/jobs/new?error=${encodeURIComponent("Source and target languages must differ.")}`);
   }
@@ -278,6 +281,7 @@ export async function createJobFromUploadAction(formData: FormData): Promise<voi
     assigned_to: assigned_to || null,
     deadline: deadline || null,
     project_id: resolvedProjectId,
+    qa_enabled: qaEnabled,
   };
   const { data: job, error: jobErr } = await service
     .from("jobs")

@@ -4,24 +4,27 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getServiceClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/auth/current-user";
-import { runDeliver, confirmDeliveryAction as confirmDeliveryImpl } from "@/lib/qa/deliver";
+import { runQa, finalizeDelivery } from "@/lib/qa/deliver";
 import { upsertTmUnit } from "@/lib/tm/default-tm";
 
 export type ActionResult<T = unknown> = ({ ok: true } & T) | { ok: false; error: string };
 
-export async function deliverAction(jobId: string): Promise<ActionResult> {
+export async function runQaAction(jobId: string): Promise<ActionResult> {
   const me = await getCurrentUser();
-  const result = await runDeliver(jobId, me.id);
+  const result = await runQa(jobId, me.id);
   if (result.ok) revalidatePath(`/translator/editor/${jobId}`);
   return result;
 }
 
-export async function confirmDelivery(jobId: string): Promise<ActionResult> {
+export async function deliverAction(jobId: string): Promise<ActionResult> {
   const me = await getCurrentUser();
-  const result = await confirmDeliveryImpl(jobId, me.id);
+  const result = await finalizeDelivery(jobId, me.id);
   if (result.ok) revalidatePath(`/translator/editor/${jobId}`);
   return result;
 }
+
+/** @deprecated alias kept so existing callers don't break — same as deliverAction */
+export const confirmDelivery = deliverAction;
 
 const FindingActionSchema = z.object({
   finding_id: z.string().uuid(),

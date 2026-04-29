@@ -42,6 +42,7 @@ export default async function EditorPage({
   const readOnly = !isAssignedToMe || (job.status !== "assigned" && job.status !== "in_progress");
 
   const jobClass: "production" | "test" = (job.job_class as "production" | "test" | null) ?? "production";
+  const qaEnabledFlag: boolean = job.qa_enabled !== false;
   const inQaReview = job.status === "qa_review";
   const inQaRunning = job.status === "qa_running";
 
@@ -142,12 +143,13 @@ export default async function EditorPage({
 
   const unresolvedCriticalCount = reviewFindings.filter((f) => f.severity === "critical").length;
 
-  // Deliver button is shown only to the assignee, and only when all
-  // segments are confirmed (job is ready to leave in_progress).
+  // Deliver/Run-QA buttons are shown to the assignee once all segments are
+  // confirmed. Deliver is allowed from in_progress AND qa_review (so the
+  // translator can deliver post-QA). Run QA is only relevant when QA is
+  // enabled on the job.
   const deliverEnabled =
     isAssignedToMe &&
     !inQaRunning &&
-    !inQaReview &&
     job.status !== "delivered" &&
     job.status !== "submitted" &&
     counts.confirmed === counts.total &&
@@ -177,8 +179,10 @@ export default async function EditorPage({
           <DeliverButton
             jobId={jobId}
             jobClass={jobClass}
+            qaEnabled={qaEnabledFlag}
             enabled={deliverEnabled}
             totalSegments={counts.total}
+            inQaRunning={inQaRunning}
           />
         </div>
       </header>

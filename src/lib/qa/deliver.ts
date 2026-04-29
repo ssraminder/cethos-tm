@@ -1,29 +1,31 @@
 /**
  * Deliver pipeline orchestrator.
  *
- * Flow:
- *   in_progress → qa_running → qa_review → delivered (production)
- *   in_progress → submitted                          (test, no QA)
+ * Two SEPARATE entry points (translator-facing as two distinct buttons):
  *
- * For production:
- *   1. Run deterministic QA (existing runQaForJob — clears unresolved auto-findings, re-inserts).
- *   2. Open a qa_runs row.
- *   3. If QA_ENABLED env is true and there are no critical deterministic
- *      blockers, run Opus on the segments. Insert opus findings linked to
- *      run_id with source='opus'.
- *   4. Flip job.status to 'qa_review'. Translator reviews findings.
+ *   runQa(jobId)
+ *     - Allowed from: assigned, in_progress, qa_review (re-run)
+ *     - Status flow: <current> → qa_running → qa_review
+ *     - Runs deterministic QA, then Opus QA (if env + job toggle allow)
+ *     - Translator can re-run after fixing things
  *
- * confirmDelivery is a separate action that flips qa_review → delivered
- * once all critical findings are resolved.
+ *   finalizeDelivery(jobId)
+ *     - Allowed from: assigned, in_progress, qa_review
+ *     - Status flow: → delivered (or → submitted for test jobs)
+ *     - Gate: no unresolved CRITICAL findings (whether deterministic or Opus)
+ *     - Per-job toggle jobs.qa_enabled controls whether Run QA is offered;
+ *       Deliver itself is always available once segments are confirmed
+ *
+ * Test jobs (job_class='test') ignore Run QA entirely and submit straight
+ * to grading.
  */
 
 import { getServiceClient } from "@/lib/supabase/server";
 import { runQaForJob } from "./run";
 import { runOpusQa, mapOpusSeverity, type OpusFinding } from "./opus";
 
-export interface DeliverResult {
+export interface QaRunResult {
   ok: true;
-  job_class: "production" | "test";
   status: string;
   deterministic: { inserted: number; findings_by_severity: Record<string, number> };
   opus?: {
@@ -34,57 +36,67 @@ export interface DeliverResult {
   };
 }
 
-export interface DeliverError {
+export interface DeliveryResult {
+  ok: true;
+  status: string;
+  job_class: "production" | "test";
+}
+
+export interface ActionError {
   ok: false;
   error: string;
 }
 
-export async function runDeliver(
-  jobId: string,
-  triggeredBy: string,
-): Promise<DeliverResult | DeliverError> {
+async function loadJob(jobId: string) {
   const supabase = await getServiceClient();
-
   const { data: job } = await supabase
     .from("jobs")
-    .select("id, status, source_lang, target_lang, job_class, assigned_to")
+    .select("id, status, source_lang, target_lang, job_class, qa_enabled, assigned_to")
     .eq("id", jobId)
     .maybeSingle();
-  if (!job) return { ok: false, error: "Job not found" };
+  return { supabase, job };
+}
 
-  if (job.status !== "in_progress" && job.status !== "assigned") {
-    return { ok: false, error: `Cannot deliver from status '${job.status}'` };
-  }
-
+async function assertAllConfirmed(jobId: string): Promise<string | null> {
+  const supabase = await getServiceClient();
   const { data: openSegs } = await supabase
     .from("segments")
     .select("id")
     .eq("job_id", jobId)
     .in("status", ["untranslated", "draft"]);
   if ((openSegs ?? []).length > 0) {
-    return { ok: false, error: `${openSegs!.length} segment(s) not yet confirmed` };
+    return `${openSegs!.length} segment(s) not yet confirmed`;
   }
+  return null;
+}
 
-  // Test jobs short-circuit: no QA, just submit.
+/**
+ * Run QA only — does NOT deliver. Lands in qa_review for translator triage.
+ */
+export async function runQa(jobId: string, triggeredBy: string): Promise<QaRunResult | ActionError> {
+  const { supabase, job } = await loadJob(jobId);
+  if (!job) return { ok: false, error: "Job not found" };
+
+  if (!["assigned", "in_progress", "qa_review"].includes(job.status)) {
+    return { ok: false, error: `Cannot run QA from status '${job.status}'` };
+  }
   if (job.job_class === "test") {
-    await supabase.from("jobs").update({ status: "submitted" }).eq("id", jobId);
-    return {
-      ok: true,
-      job_class: "test",
-      status: "submitted",
-      deterministic: { inserted: 0, findings_by_severity: {} },
-    };
+    return { ok: false, error: "QA is not available on test jobs" };
   }
+  if (job.qa_enabled === false) {
+    return { ok: false, error: "QA is disabled on this job" };
+  }
+  const blocker = await assertAllConfirmed(jobId);
+  if (blocker) return { ok: false, error: blocker };
 
-  // Production path.
   await supabase.from("jobs").update({ status: "qa_running" }).eq("id", jobId);
 
   const deterministic = await runQaForJob(jobId);
 
-  const qaEnabled = (process.env.QA_ENABLED ?? "true").toLowerCase() !== "false";
-  let opusBlock: DeliverResult["opus"] | undefined;
+  const opusEnabled = (process.env.QA_ENABLED ?? "true").toLowerCase() !== "false";
+  let opusBlock: QaRunResult["opus"] | undefined;
 
-  if (!qaEnabled) {
+  if (!opusEnabled) {
     opusBlock = { inserted: 0, cost_usd: 0, aborted: false, skipped_reason: "QA_ENABLED=false" };
   } else if ((deterministic.findings_by_severity.critical ?? 0) > 0) {
     opusBlock = {
@@ -101,7 +113,6 @@ export async function runDeliver(
 
   return {
     ok: true,
-    job_class: "production",
     status: "qa_review",
     deterministic: {
       inserted: deterministic.inserted,
@@ -111,18 +122,65 @@ export async function runDeliver(
   };
 }
 
+/**
+ * Deliver — flips status to delivered (or submitted for test jobs).
+ * Independent of QA. Only gates on unresolved critical findings.
+ */
+export async function finalizeDelivery(jobId: string, userId: string): Promise<DeliveryResult | ActionError> {
+  const { supabase, job } = await loadJob(jobId);
+  if (!job) return { ok: false, error: "Job not found" };
+
+  if (!["assigned", "in_progress", "qa_review"].includes(job.status)) {
+    return { ok: false, error: `Cannot deliver from status '${job.status}'` };
+  }
+  if (job.assigned_to !== userId) {
+    return { ok: false, error: "Not your job" };
+  }
+  const blocker = await assertAllConfirmed(jobId);
+  if (blocker) return { ok: false, error: blocker };
+
+  // Test jobs short-circuit to submitted.
+  if (job.job_class === "test") {
+    await supabase.from("jobs").update({ status: "submitted" }).eq("id", jobId);
+    return { ok: true, status: "submitted", job_class: "test" };
+  }
+
+  // Production: block if there are unresolved critical findings (regardless
+  // of state). If translator never ran QA, there are no findings → no gate.
+  const segIds = ((await supabase.from("segments").select("id").eq("job_id", jobId)).data ?? []).map(
+    (r) => r.id,
+  );
+  if (segIds.length > 0) {
+    const { data: blockers } = await supabase
+      .from("qa_findings")
+      .select("id")
+      .in("segment_id", segIds)
+      .eq("severity", "critical")
+      .eq("ignored", false)
+      .is("resolved_at", null);
+    if ((blockers ?? []).length > 0) {
+      return {
+        ok: false,
+        error: `${blockers!.length} critical finding(s) unresolved — accept, edit, or reject them first`,
+      };
+    }
+  }
+
+  await supabase.from("jobs").update({ status: "delivered" }).eq("id", jobId);
+  return { ok: true, status: "delivered", job_class: "production" };
+}
+
 async function runOpusPass(
   jobId: string,
   job: { source_lang: string; target_lang: string },
   triggeredBy: string,
-): Promise<DeliverResult["opus"]> {
+): Promise<QaRunResult["opus"]> {
   const supabase = await getServiceClient();
 
   if (!process.env.ANTHROPIC_API_KEY) {
     return { inserted: 0, cost_usd: 0, aborted: false, skipped_reason: "ANTHROPIC_API_KEY not set" };
   }
 
-  // Open the run row.
   const { data: run } = await supabase
     .from("qa_runs")
     .insert({
@@ -136,7 +194,6 @@ async function runOpusPass(
   if (!run) return { inserted: 0, cost_usd: 0, aborted: false, skipped_reason: "could not open qa_runs row" };
 
   try {
-    // Pull segments + glossary.
     const { data: segs } = await supabase
       .from("segments")
       .select("id, source_text, target_text")
@@ -152,7 +209,6 @@ async function runOpusPass(
       return { inserted: 0, cost_usd: 0, aborted: false };
     }
 
-    // Attached termbases → flat glossary.
     const { data: tbRows } = await supabase
       .from("job_resources")
       .select("resource_id")
@@ -181,7 +237,6 @@ async function runOpusPass(
       segments,
     });
 
-    // Insert findings.
     if (result.findings.length > 0) {
       const rows = result.findings.map((f: OpusFinding) => ({
         segment_id: f.segment_id,
@@ -220,45 +275,4 @@ async function runOpusPass(
       .eq("id", run.id);
     return { inserted: 0, cost_usd: 0, aborted: false, skipped_reason: `opus failed: ${msg}` };
   }
-}
-
-export async function confirmDeliveryAction(jobId: string, userId: string): Promise<DeliverResult | DeliverError> {
-  const supabase = await getServiceClient();
-
-  const { data: job } = await supabase
-    .from("jobs")
-    .select("id, status, assigned_to, job_class")
-    .eq("id", jobId)
-    .maybeSingle();
-  if (!job) return { ok: false, error: "Job not found" };
-  if (job.status !== "qa_review") {
-    return { ok: false, error: `Can only confirm delivery from 'qa_review' (got '${job.status}')` };
-  }
-  if (job.assigned_to !== userId) {
-    return { ok: false, error: "Not your job" };
-  }
-
-  // Gate: no unresolved critical findings.
-  const { data: blockers } = await supabase
-    .from("qa_findings")
-    .select("id, segment_id")
-    .in(
-      "segment_id",
-      ((await supabase.from("segments").select("id").eq("job_id", jobId)).data ?? []).map((r) => r.id),
-    )
-    .eq("severity", "critical")
-    .eq("ignored", false)
-    .is("resolved_at", null);
-  if ((blockers ?? []).length > 0) {
-    return { ok: false, error: `${blockers!.length} critical finding(s) still unresolved` };
-  }
-
-  await supabase.from("jobs").update({ status: "delivered" }).eq("id", jobId);
-
-  return {
-    ok: true,
-    job_class: job.job_class ?? "production",
-    status: "delivered",
-    deterministic: { inserted: 0, findings_by_severity: {} },
-  };
 }

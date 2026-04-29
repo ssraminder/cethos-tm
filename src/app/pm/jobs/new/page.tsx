@@ -157,6 +157,24 @@ export default async function NewJobPage({
                 : "Skipping leaves the job as a draft. Assign from the job page when ready."}
             </p>
           </div>
+
+          <div>
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                name="qa_enabled"
+                value="1"
+                defaultChecked
+                className="mt-0.5"
+              />
+              <div>
+                <span className="text-sm font-semibold text-[color:var(--color-navy)]">Enable AI QA review</span>
+                <p className="text-xs text-[color:var(--color-slate-500)]">
+                  When checked, the translator can run an Opus-powered QA pass before delivery (rule-based + LLM checks). Uncheck for jobs that should ship without AI review.
+                </p>
+              </div>
+            </label>
+          </div>
         </div>
 
         <div className="mt-6 flex items-center gap-3">
