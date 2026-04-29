@@ -5,9 +5,17 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getServerClient, getServiceClient } from "@/lib/supabase/server";
 import { requireRole } from "@/lib/auth/current-user";
-import { detectFormat, extractText, type SupportedFormat } from "@/lib/jobs/extraction";
+import {
+  detectFormat,
+  extractText,
+  extractParagraphsWithTags,
+  type SupportedFormat,
+} from "@/lib/jobs/extraction";
 import { segmentText, totalWords, type Segment } from "@/lib/jobs/segmentation";
 import { parseXliff } from "@/lib/xliff/parse";
+import { extractXlsxBuffer } from "@/lib/jobs/xlsx-extraction";
+import { extractPptxBuffer } from "@/lib/jobs/pptx-extraction";
+import { extractJsonBuffer } from "@/lib/jobs/json-extraction";
 import { createHash } from "node:crypto";
 import { generateJobReference } from "@/lib/jobs/reference";
 import { audit } from "@/lib/auth/audit";
@@ -62,6 +70,8 @@ export async function createJobFromUploadAction(formData: FormData): Promise<voi
   // (or 'translated' if the XLIFF marked it final/translated/approved).
   let segments: Segment[];
   let preTargets: Map<number, { text: string; status: "draft" | "translated" }> | null = null;
+  let segmentTags: Map<number, unknown[]> | null = null;
+  let segmentLocations: Map<number, unknown> | null = null;
   let actualSourceLang = source_lang;
   let actualTargetLang = target_lang;
   if (format === "xliff") {
@@ -95,6 +105,112 @@ export async function createJobFromUploadAction(formData: FormData): Promise<voi
         const isFinal = u.approved === true || u.state === "translated" || u.state === "final";
         preTargets!.set(seq, { text: u.target_text.trim(), status: isFinal ? "translated" : "draft" });
       }
+    });
+  } else if (format === "docx" || format === "html") {
+    // Tag-preserving path. Each paragraph (including table cells, list
+    // items, headings) becomes one segment carrying its inline-tag inventory.
+    let paragraphs;
+    try {
+      paragraphs = await extractParagraphsWithTags(buffer, format);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Could not read file";
+      redirect(`/pm/jobs/new?error=${encodeURIComponent(`Extraction failed: ${msg}`)}`);
+    }
+    if (!paragraphs || paragraphs.length === 0) {
+      redirect(`/pm/jobs/new?error=${encodeURIComponent("No translatable text found in the file.")}`);
+    }
+    segments = [];
+    segmentTags = new Map();
+    paragraphs!.forEach((p, i) => {
+      const seq = i + 1;
+      const text = p.plain_text;
+      const norm = text.normalize("NFC").replace(/\s+/g, " ").trim().toLowerCase();
+      segments.push({
+        seq,
+        source_text: text,
+        source_hash: createHash("sha256").update(norm).digest("hex"),
+        word_count: text.split(/\s+/).filter(Boolean).length,
+      });
+      if (p.tags.length > 0) segmentTags!.set(seq, p.tags as unknown[]);
+    });
+  } else if (format === "xlsx") {
+    let strings;
+    try {
+      strings = await extractXlsxBuffer(buffer);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Could not read spreadsheet";
+      redirect(`/pm/jobs/new?error=${encodeURIComponent(`Extraction failed: ${msg}`)}`);
+    }
+    if (!strings || strings.length === 0) {
+      redirect(`/pm/jobs/new?error=${encodeURIComponent("No translatable strings in the spreadsheet.")}`);
+    }
+    segments = [];
+    segmentTags = new Map();
+    segmentLocations = new Map();
+    strings!.forEach((s, i) => {
+      const seq = i + 1;
+      const text = s.plain_text;
+      const norm = text.normalize("NFC").replace(/\s+/g, " ").trim().toLowerCase();
+      segments.push({
+        seq,
+        source_text: text,
+        source_hash: createHash("sha256").update(norm).digest("hex"),
+        word_count: text.split(/\s+/).filter(Boolean).length,
+      });
+      if (s.tags.length > 0) segmentTags!.set(seq, s.tags as unknown[]);
+      segmentLocations!.set(seq, s.location);
+    });
+  } else if (format === "pptx") {
+    let paragraphs;
+    try {
+      paragraphs = await extractPptxBuffer(buffer);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Could not read presentation";
+      redirect(`/pm/jobs/new?error=${encodeURIComponent(`Extraction failed: ${msg}`)}`);
+    }
+    if (!paragraphs || paragraphs.length === 0) {
+      redirect(`/pm/jobs/new?error=${encodeURIComponent("No translatable text in the presentation.")}`);
+    }
+    segments = [];
+    segmentTags = new Map();
+    segmentLocations = new Map();
+    paragraphs!.forEach((p, i) => {
+      const seq = i + 1;
+      const text = p.plain_text;
+      const norm = text.normalize("NFC").replace(/\s+/g, " ").trim().toLowerCase();
+      segments.push({
+        seq,
+        source_text: text,
+        source_hash: createHash("sha256").update(norm).digest("hex"),
+        word_count: text.split(/\s+/).filter(Boolean).length,
+      });
+      if (p.tags.length > 0) segmentTags!.set(seq, p.tags as unknown[]);
+      segmentLocations!.set(seq, p.location);
+    });
+  } else if (format === "json") {
+    let strings;
+    try {
+      strings = extractJsonBuffer(buffer);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Could not parse JSON";
+      redirect(`/pm/jobs/new?error=${encodeURIComponent(`Extraction failed: ${msg}`)}`);
+    }
+    if (!strings || strings.length === 0) {
+      redirect(`/pm/jobs/new?error=${encodeURIComponent("No translatable strings in the JSON file.")}`);
+    }
+    segments = [];
+    segmentLocations = new Map();
+    strings!.forEach((s, i) => {
+      const seq = i + 1;
+      const text = s.plain_text;
+      const norm = text.normalize("NFC").replace(/\s+/g, " ").trim().toLowerCase();
+      segments.push({
+        seq,
+        source_text: text,
+        source_hash: createHash("sha256").update(norm).digest("hex"),
+        word_count: text.split(/\s+/).filter(Boolean).length,
+      });
+      segmentLocations!.set(seq, s.location);
     });
   } else {
     let plain: string;
@@ -189,8 +305,15 @@ export async function createJobFromUploadAction(formData: FormData): Promise<voi
   await service.from("jobs").update({ source_storage_path: storagePath }).eq("id", jobId);
 
   // 3) Bulk insert segments. For XLIFF, also populate pre-existing target text.
+  //    For docx/xlsx/pptx/json, attach tag inventory + location into meta so
+  //    the round-trip exporters can find the matching slot.
   const rows = segments.map((s) => {
     const pre = preTargets?.get(s.seq);
+    const tags = segmentTags?.get(s.seq);
+    const location = segmentLocations?.get(s.seq);
+    const meta: Record<string, unknown> = {};
+    if (tags) meta.tags = tags;
+    if (location) meta.location = location;
     return {
       job_id: jobId,
       seq: s.seq,
@@ -199,6 +322,7 @@ export async function createJobFromUploadAction(formData: FormData): Promise<voi
       word_count: s.word_count,
       target_text: pre?.text ?? "",
       status: pre?.status ?? "untranslated",
+      meta,
     };
   });
   // Chunk inserts — Postgres has a parameter limit per statement.
