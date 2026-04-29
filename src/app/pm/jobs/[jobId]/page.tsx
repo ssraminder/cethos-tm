@@ -124,6 +124,9 @@ export default async function JobDetail({
             {job.source_format === "docx" && (
               <a href={`/api/jobs/${job.id}/export-docx`} className="px-3 py-2 text-sm font-semibold rounded-md border border-[color:var(--color-slate-200)] bg-white">Download Word</a>
             )}
+            {job.source_format === "xlsx" && (
+              <a href={`/api/jobs/${job.id}/export-xlsx`} className="px-3 py-2 text-sm font-semibold rounded-md border border-[color:var(--color-slate-200)] bg-white">Download Excel</a>
+            )}
           </div>
         }
       />

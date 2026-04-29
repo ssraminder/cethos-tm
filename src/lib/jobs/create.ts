@@ -6,6 +6,7 @@ import {
   extractParagraphsWithTags,
   type SupportedFormat,
 } from "@/lib/jobs/extraction";
+import { extractXlsxBuffer } from "@/lib/jobs/xlsx-extraction";
 import { segmentText, totalWords, type Segment } from "@/lib/jobs/segmentation";
 import { parseXliff } from "@/lib/xliff/parse";
 import { generateJobReference } from "@/lib/jobs/reference";
@@ -63,6 +64,7 @@ export async function createJobFromBuffer(input: CreateJobInput): Promise<Create
   let segments: Segment[];
   let preTargets: Map<number, { text: string; status: "draft" | "translated" }> | null = null;
   let segmentTags: Map<number, unknown[]> | null = null;
+  let segmentLocations: Map<number, unknown> | null = null;
   let actualSource = input.source_lang;
   let actualTarget = input.target_lang;
 
@@ -89,6 +91,28 @@ export async function createJobFromBuffer(input: CreateJobInput): Promise<Create
         preTargets!.set(seq, { text: u.target_text.trim(), status: isFinal ? "translated" : "draft" });
       }
       if (u.source_tags && u.source_tags.length > 0) segmentTags!.set(seq, u.source_tags);
+    });
+  } else if (format === "xlsx") {
+    // XLSX path: each shared/inline string becomes one segment, with the
+    // string's location (shared index or sheet+cell) stored alongside the
+    // tag inventory so the export pipeline can splice translations back.
+    const strings = await extractXlsxBuffer(input.source_buffer);
+    if (strings.length === 0) throw new Error("No translatable text found in the spreadsheet.");
+    segments = [];
+    segmentTags = new Map();
+    segmentLocations = new Map();
+    strings.forEach((s, i) => {
+      const seq = i + 1;
+      const text = s.plain_text;
+      const norm = text.normalize("NFC").replace(/\s+/g, " ").trim().toLowerCase();
+      segments.push({
+        seq,
+        source_text: text,
+        source_hash: createHash("sha256").update(norm).digest("hex"),
+        word_count: text.split(/\s+/).filter(Boolean).length,
+      });
+      if (s.tags.length > 0) segmentTags!.set(seq, s.tags);
+      segmentLocations!.set(seq, s.location);
     });
   } else if (format === "docx" || format === "html") {
     // Tag-preserving path: each paragraph becomes one segment carrying its
@@ -161,6 +185,10 @@ export async function createJobFromBuffer(input: CreateJobInput): Promise<Create
   const rows = segments.map((s) => {
     const pre = preTargets?.get(s.seq);
     const tags = segmentTags?.get(s.seq);
+    const location = segmentLocations?.get(s.seq);
+    const meta: Record<string, unknown> = {};
+    if (tags) meta.tags = tags;
+    if (location) meta.location = location;
     return {
       job_id: jobId,
       seq: s.seq,
@@ -169,7 +197,7 @@ export async function createJobFromBuffer(input: CreateJobInput): Promise<Create
       word_count: s.word_count,
       target_text: pre?.text ?? "",
       status: pre?.status ?? "untranslated",
-      meta: tags ? { tags } : {},
+      meta,
     };
   });
   const CHUNK = 500;
