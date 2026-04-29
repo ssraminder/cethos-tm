@@ -10,12 +10,13 @@ import {
   type OoxmlParagraphSegment,
 } from "./ooxml-tags";
 
-export type SupportedFormat = "txt" | "md" | "html" | "docx" | "xlsx" | "json" | "xliff" | "unknown";
+export type SupportedFormat = "txt" | "md" | "html" | "docx" | "xlsx" | "pptx" | "json" | "xliff" | "unknown";
 
 export function detectFormat(filename: string, mimeType: string | undefined): SupportedFormat {
   const lower = filename.toLowerCase();
   if (lower.endsWith(".docx")) return "docx";
   if (lower.endsWith(".xlsx")) return "xlsx";
+  if (lower.endsWith(".pptx")) return "pptx";
   if (lower.endsWith(".txt")) return "txt";
   if (lower.endsWith(".md") || lower.endsWith(".markdown")) return "md";
   if (lower.endsWith(".html") || lower.endsWith(".htm")) return "html";
@@ -23,6 +24,7 @@ export function detectFormat(filename: string, mimeType: string | undefined): Su
   if (lower.endsWith(".xliff") || lower.endsWith(".xlf")) return "xliff";
   if (mimeType?.includes("wordprocessingml")) return "docx";
   if (mimeType?.includes("spreadsheetml")) return "xlsx";
+  if (mimeType?.includes("presentationml")) return "pptx";
   if (mimeType === "text/plain") return "txt";
   if (mimeType === "text/html") return "html";
   return "unknown";

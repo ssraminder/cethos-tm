@@ -7,6 +7,7 @@ import {
   type SupportedFormat,
 } from "@/lib/jobs/extraction";
 import { extractXlsxBuffer } from "@/lib/jobs/xlsx-extraction";
+import { extractPptxBuffer } from "@/lib/jobs/pptx-extraction";
 import { segmentText, totalWords, type Segment } from "@/lib/jobs/segmentation";
 import { parseXliff } from "@/lib/xliff/parse";
 import { generateJobReference } from "@/lib/jobs/reference";
@@ -91,6 +92,25 @@ export async function createJobFromBuffer(input: CreateJobInput): Promise<Create
         preTargets!.set(seq, { text: u.target_text.trim(), status: isFinal ? "translated" : "draft" });
       }
       if (u.source_tags && u.source_tags.length > 0) segmentTags!.set(seq, u.source_tags);
+    });
+  } else if (format === "pptx") {
+    const paragraphs = await extractPptxBuffer(input.source_buffer);
+    if (paragraphs.length === 0) throw new Error("No translatable text found in the presentation.");
+    segments = [];
+    segmentTags = new Map();
+    segmentLocations = new Map();
+    paragraphs.forEach((p, i) => {
+      const seq = i + 1;
+      const text = p.plain_text;
+      const norm = text.normalize("NFC").replace(/\s+/g, " ").trim().toLowerCase();
+      segments.push({
+        seq,
+        source_text: text,
+        source_hash: createHash("sha256").update(norm).digest("hex"),
+        word_count: text.split(/\s+/).filter(Boolean).length,
+      });
+      if (p.tags.length > 0) segmentTags!.set(seq, p.tags);
+      segmentLocations!.set(seq, p.location);
     });
   } else if (format === "xlsx") {
     // XLSX path: each shared/inline string becomes one segment, with the
