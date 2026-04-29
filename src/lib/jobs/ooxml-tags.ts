@@ -1,23 +1,35 @@
 /**
  * OOXML run-level tag handling for DOCX round-trip.
  *
- * Extraction: walk a <w:p> body and emit segment text where each formatted
- * run (and each hyperlink wrapper, br, tab) is delimited by a {N} placeholder
- * pair (open + close) so the translator sees explicit boundaries. The
- * original run properties (<w:rPr>) and hyperlink targets are stored in the
- * tag inventory.
+ * V3 scope: in addition to V2's run formatting + hyperlinks + br/tab, we now
+ * preserve a wide set of "untranslatable inline" elements as verbatim
+ * placeholders so they survive the round-trip:
+ *   - <w:drawing> ... </w:drawing>      (images, charts, shapes)
+ *   - <w:object> ... </w:object>        (embedded OLE objects)
+ *   - <w:pict>   ... </w:pict>          (legacy drawings)
+ *   - <m:oMath>  ... </m:oMath>         (math equations)
+ *   - <w:fldSimple ...>...</w:fldSimple>(simple field — page number, date)
+ *   - <w:fldChar .../>                  (complex field begin/separate/end)
+ *   - <w:instrText>...</w:instrText>    (field instructions)
+ *   - <w:footnoteReference .../>        (footnote anchor)
+ *   - <w:endnoteReference .../>         (endnote anchor)
+ *   - <w:commentReference .../>         (comment anchor)
+ *   - <w:bookmarkStart .../>            (bookmark start)
+ *   - <w:bookmarkEnd .../>              (bookmark end)
+ *   - <w:commentRangeStart .../>        (comment range start)
+ *   - <w:commentRangeEnd .../>          (comment range end)
+ *   - <w:permStart .../>                (permission range)
+ *   - <w:permEnd .../>
  *
- * Rebuild: walk a translated string with embedded {N} markers, look each up
- * in the inventory, and produce a sequence of <w:r> / <w:hyperlink> /
- * <w:br/> / <w:tab/> elements that re-create the formatting.
+ * V3 also descends into <w:ins> and <w:del> wrappers transparently (their
+ * inner runs are extracted as normal). Note: this effectively "accepts"
+ * tracked changes on round-trip — for jobs where tracked changes must
+ * survive, accept them in Word before upload.
  *
- * Limitations:
- * - Fields, drawings, footnote/endnote refs, math, comments are dropped
- *   from the segment text and won't survive the round-trip.
- * - Bookmarks (<w:bookmarkStart>, <w:bookmarkEnd>) are stripped.
- * - Nested rPr changes inside a single hyperlink emit nested pairs, which
- *   most translators can keep intact but will look noisy on highly-styled
- *   paragraphs.
+ * Elements still dropped silently:
+ *   - <w:proofErr .../>  (proofing squiggles — not content)
+ *   - <w:smartTag>...</w:smartTag>  (rare in modern docs)
+ *   - <w:sectPr>...</w:sectPr> at paragraph level (kept inside pPr)
  */
 
 export type OoxmlTagKind = "open" | "close" | "empty";
@@ -28,22 +40,20 @@ export interface OoxmlTag {
   /** Open/close placeholders share this id so a rebuilder can match them. */
   pair_id?: number;
   /** What this tag represents in OOXML. */
-  ooxml: "run" | "hyperlink" | "br" | "tab";
+  ooxml: "run" | "hyperlink" | "br" | "tab" | "verbatim";
   /** Raw <w:rPr>…</w:rPr> if the run had explicit properties. */
   run_props?: string;
   /** r:id of the hyperlink relationship if this is a hyperlink wrapper. */
   hyperlink_rid?: string;
+  /** For 'verbatim' empties: the original XML to splat back on rebuild. */
+  verbatim_xml?: string;
 }
 
 export interface OoxmlParagraphSegment {
-  /** Paragraph index in document.xml, 0-based across w:p elements. */
   para_index: number;
-  /** Segment text with {N} placeholder markers. */
   plain_text: string;
   tags: OoxmlTag[];
-  /** Original <w:p>…</w:p> verbatim so the export side can reuse the wrapper. */
   original_para_xml: string;
-  /** Inner pPr (paragraph style/numbering) extracted for convenience. */
   p_pr?: string;
 }
 
@@ -66,62 +76,193 @@ function encodeXmlText(s: string): string {
 }
 
 /**
- * Parse a single <w:p> body into a segment-friendly representation.
- * Returns null if the paragraph has no text-bearing content.
+ * Elements that appear at PARAGRAPH level (siblings of <w:r>) and should
+ * round-trip as verbatim empty placeholders.
  */
+const PARA_LEVEL_VERBATIM = [
+  "w:bookmarkStart",
+  "w:bookmarkEnd",
+  "w:commentRangeStart",
+  "w:commentRangeEnd",
+  "w:permStart",
+  "w:permEnd",
+  "w:fldSimple",
+];
+
+/**
+ * Elements that appear INSIDE <w:r> and should round-trip as verbatim
+ * empty placeholders (handled in parseRun).
+ */
+const RUN_LEVEL_VERBATIM = [
+  "w:drawing",
+  "w:object",
+  "w:pict",
+  "w:fldChar",
+  "w:instrText",
+  "w:footnoteReference",
+  "w:endnoteReference",
+  "w:commentReference",
+  "m:oMath",
+];
+
+/**
+ * Build a regex that matches any of these element types — both self-closing
+ * (<x/>) and paired (<x>...</x>) forms.
+ */
+function buildVerbatimRegex(elements: string[]): RegExp {
+  const escaped = elements.map((e) => e.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const alternation = escaped.join("|");
+  // Match either <x .../> or <x ...>...</x>
+  return new RegExp(`<(${alternation})\\b[^>]*?/>|<(${alternation})\\b[^>]*?>[\\s\\S]*?</\\2\\s*>`, "g");
+}
+
+const PARA_VERBATIM_RE = buildVerbatimRegex(PARA_LEVEL_VERBATIM);
+
+/**
+ * Elements we descend into transparently at paragraph level: their inner
+ * <w:r> runs are extracted as normal. Used for tracked changes (<w:ins>,
+ * <w:del>) and smart tags.
+ */
+const TRANSPARENT_WRAPPERS = ["w:ins", "w:del", "w:smartTag"];
+
+/**
+ * Strip elements we want to drop entirely (no placeholder, no preservation).
+ */
+const DROP_ELEMENTS = ["w:proofErr"];
+
+function preprocessParagraphInner(inner: string): string {
+  let out = inner;
+  // Drop proofing markers entirely.
+  for (const el of DROP_ELEMENTS) {
+    const re = new RegExp(`<${el}\\b[^>]*?/>`, "g");
+    out = out.replace(re, "");
+  }
+  // Unwrap transparent wrappers, keeping their content.
+  for (const el of TRANSPARENT_WRAPPERS) {
+    const reSelf = new RegExp(`<${el}\\b[^>]*?/>`, "g");
+    out = out.replace(reSelf, "");
+    const rePair = new RegExp(`<${el}\\b[^>]*?>([\\s\\S]*?)</${el}\\s*>`, "g");
+    out = out.replace(rePair, "$1");
+  }
+  return out;
+}
+
+interface ParseState {
+  nextId: number;
+}
+
 function parseParagraph(
-  innerXml: string,
+  rawInner: string,
   paraIndex: number,
   fullParaXml: string,
-  startId: number,
+  state: ParseState,
 ): OoxmlParagraphSegment | null {
   const tags: OoxmlTag[] = [];
-  let nextId = startId;
   let plain = "";
 
-  // Extract pPr (paragraph properties) once.
-  const pPrMatch = innerXml.match(/<w:pPr\b[\s\S]*?<\/w:pPr\s*>/);
+  // Pull pPr first, then strip it from the body so it doesn't interfere.
+  const pPrMatch = rawInner.match(/<w:pPr\b[\s\S]*?<\/w:pPr\s*>/);
   const pPr = pPrMatch?.[0];
+  let body = pPr ? rawInner.replace(pPr, "") : rawInner;
 
-  // Walk children of <w:p> in order. We only care about:
-  //   <w:r> ... </w:r>
-  //   <w:hyperlink ...> ... </w:hyperlink>
-  // Anything else (bookmarks, sectPr, etc.) is skipped.
-  const CHILD_RE =
-    /<w:hyperlink\b([^>]*)>([\s\S]*?)<\/w:hyperlink\s*>|<w:r\b[^>]*>([\s\S]*?)<\/w:r\s*>/g;
+  // Drop proofErr / unwrap ins/del/smartTag.
+  body = preprocessParagraphInner(body);
 
-  for (const m of innerXml.matchAll(CHILD_RE)) {
-    if (m[0].startsWith("<w:hyperlink")) {
-      const attrs = m[1] ?? "";
-      const linkInner = m[2] ?? "";
+  // Walk the paragraph body in source order, capturing:
+  //   - <w:hyperlink>...</w:hyperlink>
+  //   - <w:r>...</w:r>
+  //   - paragraph-level verbatim elements (bookmarks, comment ranges, etc.)
+  //
+  // Build an ordered list of matches with their offsets, then process each.
+  interface Hit {
+    start: number;
+    end: number;
+    type: "hyperlink" | "run" | "verbatim";
+    text: string;
+  }
+
+  const hits: Hit[] = [];
+
+  for (const m of body.matchAll(/<w:hyperlink\b[^>]*>[\s\S]*?<\/w:hyperlink\s*>/g)) {
+    hits.push({ start: m.index ?? 0, end: (m.index ?? 0) + m[0].length, type: "hyperlink", text: m[0] });
+  }
+  for (const m of body.matchAll(/<w:r\b[^>]*>[\s\S]*?<\/w:r\s*>/g)) {
+    hits.push({ start: m.index ?? 0, end: (m.index ?? 0) + m[0].length, type: "run", text: m[0] });
+  }
+  for (const m of body.matchAll(PARA_VERBATIM_RE)) {
+    hits.push({
+      start: m.index ?? 0,
+      end: (m.index ?? 0) + m[0].length,
+      type: "verbatim",
+      text: m[0],
+    });
+  }
+
+  // Sort by start position, then drop hits that overlap an earlier longer
+  // one (the longer enclosing element wins — handles cases like a
+  // bookmarkStart that happens to be inside a hyperlink).
+  hits.sort((a, b) => a.start - b.start || b.end - a.end);
+  const accepted: Hit[] = [];
+  let lastEnd = -1;
+  for (const h of hits) {
+    if (h.start < lastEnd) continue;
+    accepted.push(h);
+    lastEnd = h.end;
+  }
+
+  for (const h of accepted) {
+    if (h.type === "hyperlink") {
+      const attrs = h.text.match(/^<w:hyperlink\b([^>]*)>/)?.[1] ?? "";
+      const linkInner = h.text.match(/^<w:hyperlink\b[^>]*>([\s\S]*?)<\/w:hyperlink\s*>$/)?.[1] ?? "";
       const ridMatch = attrs.match(/r:id="([^"]+)"/);
       const rid = ridMatch?.[1];
 
-      const openId = nextId++;
-      const closeId = nextId++;
+      const openId = state.nextId++;
+      const closeId = state.nextId++;
       tags.push({ id: openId, kind: "open", pair_id: openId, ooxml: "hyperlink", hyperlink_rid: rid });
       plain += `{${openId}}`;
 
-      // Recurse into the hyperlink's inner runs.
-      const inner = parseRunSequence(linkInner, nextId);
+      // Recurse: hyperlink's children are runs (and possibly verbatim
+      // elements). Reuse parseParagraphInternal by treating its inner XML
+      // as a mini-paragraph body.
+      const inner = parseRunSequence(linkInner, state);
       plain += inner.plain;
       tags.push(...inner.tags);
-      nextId = inner.nextId;
 
       tags.push({ id: closeId, kind: "close", pair_id: openId, ooxml: "hyperlink", hyperlink_rid: rid });
       plain += `{${closeId}}`;
-    } else {
-      // <w:r> at the paragraph level (not inside a hyperlink).
-      const result = parseRun(m[0], nextId);
-      if (result) {
-        plain += result.plain;
-        tags.push(...result.tags);
-        nextId = result.nextId;
+    } else if (h.type === "run") {
+      const r = parseRun(h.text, state);
+      if (r) {
+        plain += r.plain;
+        tags.push(...r.tags);
       }
+    } else if (h.type === "verbatim") {
+      const id = state.nextId++;
+      tags.push({
+        id,
+        kind: "empty",
+        ooxml: "verbatim",
+        verbatim_xml: h.text,
+      });
+      plain += `{${id}}`;
     }
   }
 
+  // Drop paragraphs whose visible text (after removing placeholders) is empty.
   if (plain.replace(/\{\d+\}/g, "").trim().length === 0) {
+    // BUT: if the paragraph has any tags (e.g. just a drawing), still emit
+    // it so the round-trip preserves the image. Show "(formatting)" as the
+    // segment text so the translator sees something.
+    if (tags.length > 0) {
+      return {
+        para_index: paraIndex,
+        plain_text: plain.trim(),
+        tags,
+        original_para_xml: fullParaXml,
+        p_pr: pPr,
+      };
+    }
     return null;
   }
 
@@ -137,15 +278,9 @@ function parseParagraph(
 interface RunResult {
   plain: string;
   tags: OoxmlTag[];
-  nextId: number;
 }
 
-/**
- * Parse a single <w:r>…</w:r> run, returning its plain-text contribution
- * (with optional open/close placeholders if the run carries rPr or has
- * br/tab) plus tag entries.
- */
-function parseRun(runXml: string, startId: number): RunResult | null {
+function parseRun(runXml: string, state: ParseState): RunResult | null {
   const innerMatch = runXml.match(/^<w:r\b[^>]*>([\s\S]*)<\/w:r\s*>$/);
   if (!innerMatch) return null;
   const inner = innerMatch[1];
@@ -155,90 +290,134 @@ function parseRun(runXml: string, startId: number): RunResult | null {
   const hasRPr = rPr !== undefined && rPr.length > 0 && /<w:[a-z]/.test(rPr);
 
   const tags: OoxmlTag[] = [];
-  let nextId = startId;
   let plain = "";
 
-  // Pull out text/break/tab children in order.
-  const CHILD_RE = /<w:t\b[^>]*>([\s\S]*?)<\/w:t\s*>|<w:br\b[^/]*\/>|<w:tab\b[^/]*\/>/g;
-  let textChunks = "";
-  const empties: Array<{ kind: "br" | "tab" }> = [];
+  // Walk children in order: <w:t>, <w:br/>, <w:tab/>, and run-level verbatim
+  // elements (drawing, footnoteReference, fldChar, instrText, etc.).
+  interface Child {
+    start: number;
+    end: number;
+    kind: "text" | "br" | "tab" | "verbatim";
+    payload: string;
+  }
+  const children: Child[] = [];
 
-  for (const c of inner.matchAll(CHILD_RE)) {
-    const tag = c[0];
-    if (tag.startsWith("<w:t")) {
-      textChunks += decodeXmlText(c[1] ?? "");
-    } else if (tag.startsWith("<w:br")) {
-      empties.push({ kind: "br" });
-    } else if (tag.startsWith("<w:tab")) {
-      empties.push({ kind: "tab" });
-    }
+  for (const m of inner.matchAll(/<w:t\b[^>]*>([\s\S]*?)<\/w:t\s*>/g)) {
+    children.push({
+      start: m.index ?? 0,
+      end: (m.index ?? 0) + m[0].length,
+      kind: "text",
+      payload: decodeXmlText(m[1] ?? ""),
+    });
+  }
+  for (const m of inner.matchAll(/<w:br\b[^/]*\/>/g)) {
+    children.push({
+      start: m.index ?? 0,
+      end: (m.index ?? 0) + m[0].length,
+      kind: "br",
+      payload: "",
+    });
+  }
+  for (const m of inner.matchAll(/<w:tab\b[^/]*\/>/g)) {
+    children.push({
+      start: m.index ?? 0,
+      end: (m.index ?? 0) + m[0].length,
+      kind: "tab",
+      payload: "",
+    });
   }
 
-  // Emit text segment first, wrapped in placeholders if the run is styled.
-  if (textChunks.length > 0) {
+  const RUN_VERBATIM_RE = buildVerbatimRegex(RUN_LEVEL_VERBATIM);
+  for (const m of inner.matchAll(RUN_VERBATIM_RE)) {
+    children.push({
+      start: m.index ?? 0,
+      end: (m.index ?? 0) + m[0].length,
+      kind: "verbatim",
+      payload: m[0],
+    });
+  }
+
+  children.sort((a, b) => a.start - b.start);
+
+  // Group consecutive text children together (simple optimization for
+  // adjacent <w:t>s) but emit other children as separate placeholders.
+  let textBuffer = "";
+  function flushText() {
+    if (textBuffer.length === 0) return;
     if (hasRPr) {
-      const openId = nextId++;
-      const closeId = nextId++;
+      const openId = state.nextId++;
+      const closeId = state.nextId++;
       tags.push({ id: openId, kind: "open", pair_id: openId, ooxml: "run", run_props: rPr });
-      plain += `{${openId}}${textChunks}{${closeId}}`;
+      plain += `{${openId}}${textBuffer}{${closeId}}`;
       tags.push({ id: closeId, kind: "close", pair_id: openId, ooxml: "run", run_props: rPr });
     } else {
-      plain += textChunks;
+      plain += textBuffer;
+    }
+    textBuffer = "";
+  }
+
+  for (const c of children) {
+    if (c.kind === "text") {
+      textBuffer += c.payload;
+    } else if (c.kind === "br") {
+      flushText();
+      const id = state.nextId++;
+      tags.push({ id, kind: "empty", ooxml: "br", run_props: hasRPr ? rPr : undefined });
+      plain += `{${id}}`;
+    } else if (c.kind === "tab") {
+      flushText();
+      const id = state.nextId++;
+      tags.push({ id, kind: "empty", ooxml: "tab", run_props: hasRPr ? rPr : undefined });
+      plain += `{${id}}`;
+    } else if (c.kind === "verbatim") {
+      flushText();
+      // Wrap the verbatim element in a <w:r> on rebuild so it lives inside
+      // a run with the original rPr. Store run_props alongside verbatim_xml.
+      const id = state.nextId++;
+      tags.push({
+        id,
+        kind: "empty",
+        ooxml: "verbatim",
+        verbatim_xml: c.payload,
+        run_props: hasRPr ? rPr : undefined,
+      });
+      plain += `{${id}}`;
     }
   }
-
-  // Emit empty markers for br/tab AFTER the text portion (their positional
-  // semantics inside a run are typically end-of-run for headings).
-  for (const e of empties) {
-    const id = nextId++;
-    tags.push({ id, kind: "empty", ooxml: e.kind, run_props: hasRPr ? rPr : undefined });
-    plain += `{${id}}`;
-  }
+  flushText();
 
   if (plain.length === 0) return null;
-  return { plain, tags, nextId };
+  return { plain, tags };
 }
 
-function parseRunSequence(xml: string, startId: number): RunResult {
-  let nextId = startId;
+function parseRunSequence(xml: string, state: ParseState): RunResult {
   let plain = "";
   const tags: OoxmlTag[] = [];
-  for (const m of xml.matchAll(/<w:r\b[^>]*>([\s\S]*?)<\/w:r\s*>/g)) {
-    const r = parseRun(m[0], nextId);
+  for (const m of xml.matchAll(/<w:r\b[^>]*>[\s\S]*?<\/w:r\s*>/g)) {
+    const r = parseRun(m[0], state);
     if (!r) continue;
     plain += r.plain;
     tags.push(...r.tags);
-    nextId = r.nextId;
   }
-  return { plain, tags, nextId };
+  return { plain, tags };
 }
 
-/**
- * Walk every <w:p> in document.xml and produce one OoxmlParagraphSegment
- * per paragraph that has text content. Skips empty paragraphs (section
- * breaks, blank lines).
- */
 export function extractOoxmlParagraphs(documentXml: string): OoxmlParagraphSegment[] {
   const out: OoxmlParagraphSegment[] = [];
   let paraIndex = -1;
+  const state: ParseState = { nextId: 1 };
   for (const m of documentXml.matchAll(PARA_RE)) {
     paraIndex += 1;
     const inner = m[1];
-    if (inner === undefined) continue; // self-closing <w:p/>
-    const seg = parseParagraph(inner, paraIndex, m[0], 1);
+    if (inner === undefined) continue;
+    const seg = parseParagraph(inner, paraIndex, m[0], state);
     if (seg) out.push(seg);
+    // Reset id counter per paragraph so {N} numbering stays small + readable.
+    state.nextId = 1;
   }
   return out;
 }
 
-/**
- * Rebuild the body of a <w:p> from the translator's text + the tag inventory.
- * The translator's text contains {N} placeholders. We expand each to the
- * matching OOXML run / hyperlink / break.
- *
- * Returns the inner XML (everything that goes between <w:p> and </w:p>),
- * including the original pPr block so paragraph style survives.
- */
 export function rebuildParagraphBody(
   translated: string,
   tags: OoxmlTag[],
@@ -250,46 +429,49 @@ export function rebuildParagraphBody(
   const parts: string[] = [];
   if (pPr) parts.push(pPr);
 
-  // Walk the translated string, emitting runs as we go.
-  // State machine: we track currently-open formatting (rPr stack) and
-  // hyperlink wrapper. Each text chunk emits a <w:r> with the active rPr.
-
   interface Open {
     pair_id: number;
     ooxml: "run" | "hyperlink";
     run_props?: string;
     hyperlink_rid?: string;
-    // For hyperlinks we collect the inner runs and emit at close time.
     pendingChildren?: string[];
   }
-
   const stack: Open[] = [];
 
-  function emitText(text: string) {
-    if (text.length === 0) return;
+  function pushFragment(frag: string) {
     const inHyperlink = stack.findLast((s) => s.ooxml === "hyperlink");
-    const activeRun = stack.findLast((s) => s.ooxml === "run");
-    const rPr = activeRun?.run_props ?? "";
-    const safe = encodeXmlText(text);
-    const run = `<w:r>${rPr}<w:t xml:space="preserve">${safe}</w:t></w:r>`;
     if (inHyperlink && inHyperlink.pendingChildren) {
-      inHyperlink.pendingChildren.push(run);
+      inHyperlink.pendingChildren.push(frag);
     } else {
-      parts.push(run);
+      parts.push(frag);
     }
   }
 
+  function emitText(text: string) {
+    if (text.length === 0) return;
+    const activeRun = stack.findLast((s) => s.ooxml === "run");
+    const rPr = activeRun?.run_props ?? "";
+    const safe = encodeXmlText(text);
+    pushFragment(`<w:r>${rPr}<w:t xml:space="preserve">${safe}</w:t></w:r>`);
+  }
+
   function emitEmpty(tag: OoxmlTag) {
-    const inner =
-      tag.ooxml === "br" ? "<w:br/>" : tag.ooxml === "tab" ? "<w:tab/>" : "";
-    if (!inner) return;
-    const rPr = tag.run_props ?? "";
-    const run = `<w:r>${rPr}${inner}</w:r>`;
-    const inHyperlink = stack.findLast((s) => s.ooxml === "hyperlink");
-    if (inHyperlink && inHyperlink.pendingChildren) {
-      inHyperlink.pendingChildren.push(run);
-    } else {
-      parts.push(run);
+    if (tag.ooxml === "br") {
+      const rPr = tag.run_props ?? "";
+      pushFragment(`<w:r>${rPr}<w:br/></w:r>`);
+    } else if (tag.ooxml === "tab") {
+      const rPr = tag.run_props ?? "";
+      pushFragment(`<w:r>${rPr}<w:tab/></w:r>`);
+    } else if (tag.ooxml === "verbatim" && tag.verbatim_xml) {
+      // If the verbatim element belongs inside a <w:r>, wrap it; otherwise
+      // emit at paragraph level. Heuristic: if run_props is present we know
+      // it came from inside a run.
+      if (tag.run_props !== undefined || isRunLevelVerbatim(tag.verbatim_xml)) {
+        const rPr = tag.run_props ?? "";
+        pushFragment(`<w:r>${rPr}${tag.verbatim_xml}</w:r>`);
+      } else {
+        pushFragment(tag.verbatim_xml);
+      }
     }
   }
 
@@ -301,7 +483,7 @@ export function rebuildParagraphBody(
     const id = Number(m[1]);
     const tag = byId.get(id);
     cursor = start + m[0].length;
-    if (!tag) continue; // unknown placeholder — drop silently
+    if (!tag) continue;
 
     if (tag.kind === "open") {
       stack.push({
@@ -312,7 +494,6 @@ export function rebuildParagraphBody(
         pendingChildren: tag.ooxml === "hyperlink" ? [] : undefined,
       });
     } else if (tag.kind === "close") {
-      // Close the matching open from the top of the stack.
       const idx = stack.findLastIndex((s) => s.pair_id === (tag.pair_id ?? id));
       if (idx === -1) continue;
       const closing = stack[idx];
@@ -321,12 +502,7 @@ export function rebuildParagraphBody(
         const ridAttr = closing.hyperlink_rid ? ` r:id="${closing.hyperlink_rid}"` : "";
         const inner = (closing.pendingChildren ?? []).join("");
         const wrapper = `<w:hyperlink${ridAttr}>${inner}</w:hyperlink>`;
-        const stillInside = stack.findLast((s) => s.ooxml === "hyperlink");
-        if (stillInside && stillInside.pendingChildren) {
-          stillInside.pendingChildren.push(wrapper);
-        } else {
-          parts.push(wrapper);
-        }
+        pushFragment(wrapper);
       }
     } else if (tag.kind === "empty") {
       emitEmpty(tag);
@@ -334,7 +510,6 @@ export function rebuildParagraphBody(
   }
   if (cursor < translated.length) emitText(translated.slice(cursor));
 
-  // Any unclosed hyperlinks: emit what we have.
   while (stack.length > 0) {
     const top = stack.pop()!;
     if (top.ooxml === "hyperlink") {
@@ -345,4 +520,8 @@ export function rebuildParagraphBody(
   }
 
   return parts.join("");
+}
+
+function isRunLevelVerbatim(xml: string): boolean {
+  return RUN_LEVEL_VERBATIM.some((tag) => xml.startsWith(`<${tag}`));
 }
