@@ -1,0 +1,35 @@
+{
+  "app": {
+    "name": "[FR] ACME DASHBOARD",
+    "tagline": "[FR] YOUR DATA, BEAUTIFULLY EXPLAINED"
+  },
+  "nav": {
+    "home": "[FR] HOME",
+    "reports": "[FR] REPORTS",
+    "settings": "[FR] SETTINGS",
+    "signOut": "[FR] SIGN OUT"
+  },
+  "actions": [
+    "[FR] SAVE CHANGES",
+    "[FR] CANCEL",
+    "[FR] DELETE"
+  ],
+  "messages": {
+    "welcome": "[FR] WELCOME BACK, {NAME}!",
+    "saved": "[FR] YOUR CHANGES HAVE BEEN SAVED.",
+    "deleteConfirm": "[FR] ARE YOU SURE YOU WANT TO DELETE THIS ITEM? THIS ACTION CANNOT BE UNDONE.",
+    "errorGeneric": "[FR] SOMETHING WENT WRONG. PLEASE TRY AGAIN."
+  },
+  "version": "[FR] 2.4.1",
+  "buildNumber": 1729,
+  "isProduction": true,
+  "config": {
+    "maxItems": 100,
+    "supportedLanguages": [
+      "[FR] EN",
+      "[FR] FR",
+      "[FR] ES",
+      "[FR] DE"
+    ]
+  }
+}

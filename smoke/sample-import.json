@@ -1,0 +1,30 @@
+{
+  "app": {
+    "name": "Acme Dashboard",
+    "tagline": "Your data, beautifully explained"
+  },
+  "nav": {
+    "home": "Home",
+    "reports": "Reports",
+    "settings": "Settings",
+    "signOut": "Sign out"
+  },
+  "actions": [
+    "Save changes",
+    "Cancel",
+    "Delete"
+  ],
+  "messages": {
+    "welcome": "Welcome back, {name}!",
+    "saved": "Your changes have been saved.",
+    "deleteConfirm": "Are you sure you want to delete this item? This action cannot be undone.",
+    "errorGeneric": "Something went wrong. Please try again."
+  },
+  "version": "2.4.1",
+  "buildNumber": 1729,
+  "isProduction": true,
+  "config": {
+    "maxItems": 100,
+    "supportedLanguages": ["en", "fr", "es", "de"]
+  }
+}
