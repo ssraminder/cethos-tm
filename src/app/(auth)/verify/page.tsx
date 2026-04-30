@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { verifyAction, resendAction } from "./actions";
 
@@ -57,15 +58,24 @@ export default async function VerifyPage({
         </button>
       </form>
 
-      <form action={resendAction} className="mt-3">
-        <input type="hidden" name="email" value={email} />
-        <button
-          type="submit"
-          className="w-full text-sm text-[color:var(--color-teal-700)] hover:underline py-1.5"
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <form action={resendAction} className="flex-1">
+          <input type="hidden" name="email" value={email} />
+          <button
+            type="submit"
+            className="w-full text-sm text-[color:var(--color-teal-700)] hover:underline py-1.5"
+          >
+            Resend code
+          </button>
+        </form>
+        <span className="text-[color:var(--color-slate-300)]">·</span>
+        <Link
+          href="/sign-in"
+          className="flex-1 text-center text-sm text-[color:var(--color-slate-600)] hover:underline py-1.5"
         >
-          Resend code
-        </button>
-      </form>
+          Use a different email
+        </Link>
+      </div>
     </div>
   );
 }

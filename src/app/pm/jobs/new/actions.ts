@@ -16,6 +16,7 @@ import { parseXliff } from "@/lib/xliff/parse";
 import { extractXlsxBuffer } from "@/lib/jobs/xlsx-extraction";
 import { extractPptxBuffer } from "@/lib/jobs/pptx-extraction";
 import { extractJsonBuffer } from "@/lib/jobs/json-extraction";
+import { getOrCreateDefaultTm } from "@/lib/tm/default-tm";
 import { createHash } from "node:crypto";
 import { generateJobReference } from "@/lib/jobs/reference";
 import { audit } from "@/lib/auth/audit";
@@ -340,6 +341,30 @@ export async function createJobFromUploadAction(formData: FormData): Promise<voi
       await service.from("jobs").delete().eq("id", jobId);
       redirect(`/pm/jobs/new?error=${encodeURIComponent(`Segmentation insert failed: ${segErr.message}`)}`);
     }
+  }
+
+  // 4) Auto-attach the default TM for this language pair so confirmed
+  //    segments accumulate into a leverageable corpus across jobs. Failure
+  //    to create/attach is non-fatal — the job still works.
+  try {
+    const defaultTmId = await getOrCreateDefaultTm({
+      source_lang: actualSourceLang,
+      target_lang: actualTargetLang,
+      created_by: me.id,
+    });
+    if (defaultTmId) {
+      await service.from("job_resources").insert({
+        job_id: jobId,
+        resource_type: "tm",
+        resource_id: defaultTmId,
+        priority: 1000,
+      });
+    }
+  } catch (e) {
+    console.error(
+      `[createJobFromUploadAction] default TM attach failed (${actualSourceLang}->${actualTargetLang}):`,
+      e instanceof Error ? e.message : String(e),
+    );
   }
 
   const h = await headers();
