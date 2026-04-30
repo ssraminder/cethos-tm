@@ -41,12 +41,16 @@ export function RightAside({
   activeSegmentId,
   activeSegmentSource,
   activeSegmentTermHits,
+  sourceLangLabel,
+  targetLangLabel,
 }: {
   jobId: string;
   readOnly: boolean;
   activeSegmentId: string | null;
   activeSegmentSource: string | null;
   activeSegmentTermHits: TermHit[];
+  sourceLangLabel: string;
+  targetLangLabel: string;
 }) {
   const [tab, setTab] = useState<Tab>("matches");
 
@@ -74,18 +78,49 @@ export function RightAside({
             readOnly={readOnly}
             activeSegmentId={activeSegmentId}
             activeSegmentSource={activeSegmentSource}
+            sourceLangLabel={sourceLangLabel}
+            targetLangLabel={targetLangLabel}
           />
         )}
         {tab === "term" && (
           <TermbaseTab
             activeSegmentId={activeSegmentId}
             termHits={activeSegmentTermHits}
+            sourceLangLabel={sourceLangLabel}
+            targetLangLabel={targetLangLabel}
           />
         )}
-        {tab === "tm-search" && <TmSearchTab jobId={jobId} />}
-        {tab === "glossary" && <GlossarySearchTab jobId={jobId} />}
+        {tab === "tm-search" && (
+          <TmSearchTab
+            jobId={jobId}
+            sourceLangLabel={sourceLangLabel}
+            targetLangLabel={targetLangLabel}
+          />
+        )}
+        {tab === "glossary" && (
+          <GlossarySearchTab
+            jobId={jobId}
+            sourceLangLabel={sourceLangLabel}
+            targetLangLabel={targetLangLabel}
+          />
+        )}
       </div>
     </aside>
+  );
+}
+
+function FieldLabel({ kind, lang }: { kind: "source" | "target"; lang: string }) {
+  return (
+    <div
+      className={[
+        "text-[10px] uppercase tracking-wider font-bold mb-0.5",
+        kind === "source"
+          ? "text-[color:var(--color-slate-500)]"
+          : "text-[color:var(--color-teal-700)]",
+      ].join(" ")}
+    >
+      {kind === "source" ? "Source" : "Target"} &mdash; {lang}
+    </div>
   );
 }
 
@@ -121,11 +156,15 @@ function MatchesTab({
   readOnly,
   activeSegmentId,
   activeSegmentSource,
+  sourceLangLabel,
+  targetLangLabel,
 }: {
   jobId: string;
   readOnly: boolean;
   activeSegmentId: string | null;
   activeSegmentSource: string | null;
+  sourceLangLabel: string;
+  targetLangLabel: string;
 }) {
   const [matches, setMatches] = useState<TmMatch[] | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -208,9 +247,11 @@ function MatchesTab({
               · {m.kind}
             </span>
           </div>
-          <div className="text-xs mono text-[color:var(--color-slate-700)] mb-0.5">
+          <FieldLabel kind="source" lang={sourceLangLabel} />
+          <div className="text-xs mono text-[color:var(--color-slate-700)] mb-1.5">
             {m.source_text}
           </div>
+          <FieldLabel kind="target" lang={targetLangLabel} />
           <div className="text-xs mono text-[color:var(--color-navy)]">
             {m.target_text}
           </div>
@@ -243,9 +284,13 @@ function MatchesTab({
 function TermbaseTab({
   activeSegmentId,
   termHits,
+  sourceLangLabel,
+  targetLangLabel,
 }: {
   activeSegmentId: string | null;
   termHits: TermHit[];
+  sourceLangLabel: string;
+  targetLangLabel: string;
 }) {
   if (!activeSegmentId) {
     return (
@@ -273,11 +318,23 @@ function TermbaseTab({
               : "border-[color:var(--color-teal-100)] bg-[color:var(--color-teal-50)]",
           ].join(" ")}
         >
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span
+              className="text-[9px] uppercase font-bold text-[color:var(--color-slate-500)] mono"
+              title={`Source — ${sourceLangLabel}`}
+            >
+              {sourceLangLabel}
+            </span>
             <span className="font-semibold text-[color:var(--color-slate-700)]">
               {h.source_term}
             </span>
             <span className="text-[color:var(--color-slate-400)]">→</span>
+            <span
+              className="text-[9px] uppercase font-bold text-[color:var(--color-teal-700)] mono"
+              title={`Target — ${targetLangLabel}`}
+            >
+              {targetLangLabel}
+            </span>
             <span
               className={
                 h.target_status === "forbidden"
@@ -301,7 +358,15 @@ function TermbaseTab({
 
 // ---- TM search tab --------------------------------------------------------
 
-function TmSearchTab({ jobId }: { jobId: string }) {
+function TmSearchTab({
+  jobId,
+  sourceLangLabel,
+  targetLangLabel,
+}: {
+  jobId: string;
+  sourceLangLabel: string;
+  targetLangLabel: string;
+}) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<TmSearchResult[] | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -360,10 +425,12 @@ function TmSearchTab({ jobId }: { jobId: string }) {
               key={r.unit_id}
               className="rounded border border-[color:var(--color-border)] bg-[color:var(--color-slate-50)] p-2"
             >
-              <div className="text-xs mono text-[color:var(--color-slate-700)]">
+              <FieldLabel kind="source" lang={sourceLangLabel} />
+              <div className="text-xs mono text-[color:var(--color-slate-700)] mb-1.5">
                 {r.source_text}
               </div>
-              <div className="text-xs mono text-[color:var(--color-navy)] mt-0.5">
+              <FieldLabel kind="target" lang={targetLangLabel} />
+              <div className="text-xs mono text-[color:var(--color-navy)]">
                 {r.target_text}
               </div>
               <div className="flex items-center justify-between mt-1.5 text-[10px] text-[color:var(--color-slate-500)]">
@@ -382,7 +449,15 @@ function TmSearchTab({ jobId }: { jobId: string }) {
 
 // ---- Glossary search tab --------------------------------------------------
 
-function GlossarySearchTab({ jobId }: { jobId: string }) {
+function GlossarySearchTab({
+  jobId,
+  sourceLangLabel,
+  targetLangLabel,
+}: {
+  jobId: string;
+  sourceLangLabel: string;
+  targetLangLabel: string;
+}) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<GlossaryHit[] | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -441,11 +516,23 @@ function GlossarySearchTab({ jobId }: { jobId: string }) {
               key={r.concept_id}
               className="rounded border border-[color:var(--color-border)] bg-[color:var(--color-slate-50)] p-2"
             >
-              <div className="flex items-center gap-1.5 text-xs mb-0.5">
+              <div className="flex items-center gap-1.5 text-xs mb-0.5 flex-wrap">
+                <span
+                  className="text-[9px] uppercase font-bold text-[color:var(--color-slate-500)] mono"
+                  title={`Source — ${sourceLangLabel}`}
+                >
+                  {sourceLangLabel}
+                </span>
                 <span className="font-semibold text-[color:var(--color-slate-700)]">
                   {r.source_term}
                 </span>
                 <span className="text-[color:var(--color-slate-400)]">→</span>
+                <span
+                  className="text-[9px] uppercase font-bold text-[color:var(--color-teal-700)] mono"
+                  title={`Target — ${targetLangLabel}`}
+                >
+                  {targetLangLabel}
+                </span>
                 <span
                   className={
                     r.target_status === "forbidden"

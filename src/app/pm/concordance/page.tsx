@@ -56,11 +56,21 @@ export default async function PmConcordancePage({
                   </span>
                   <span className="ml-auto">{new Date(r.created_at).toLocaleDateString()}</span>
                 </div>
-                <div className="text-sm mono text-[color:var(--color-slate-700)] mb-1">
-                  {r.source_text}
+                <div className="mb-2">
+                  <div className="text-[10px] uppercase tracking-wider font-bold text-[color:var(--color-slate-500)] mb-0.5">
+                    Source &mdash; {r.source_lang}
+                  </div>
+                  <div className="text-sm mono text-[color:var(--color-slate-700)]">
+                    {r.source_text}
+                  </div>
                 </div>
-                <div className="text-sm mono text-[color:var(--color-navy)]">
-                  {r.target_text}
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider font-bold text-[color:var(--color-teal-700)] mb-0.5">
+                    Target &mdash; {r.target_lang}
+                  </div>
+                  <div className="text-sm mono text-[color:var(--color-navy)]">
+                    {r.target_text}
+                  </div>
                 </div>
               </div>
             ))}

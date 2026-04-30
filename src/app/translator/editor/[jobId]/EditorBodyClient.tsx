@@ -101,6 +101,8 @@ export function EditorBodyClient({
         activeSegmentId={active?.id ?? null}
         activeSegmentSource={active?.source_text ?? null}
         activeSegmentTermHits={activeTermHits}
+        sourceLangLabel={sourceLangLabel}
+        targetLangLabel={targetLangLabel}
       />
     </div>
   );
