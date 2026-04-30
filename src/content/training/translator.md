@@ -229,16 +229,28 @@ origin becomes `mt_edited`.
 
 ---
 
-## Deliver and QA review
+## Run QA and Deliver
 
-When all segments on a production job are confirmed (status `translated`
-or `reviewed`), the **Deliver** button in the top bar lights up. Click
-it to start the QA pipeline.
+Run QA and Deliver are **two separate actions**. They are no longer
+chained — you can run QA on demand, iterate on findings, and deliver
+whenever you're ready.
 
-![Deliver confirm dialog](/training/translator/05-deliver-confirm.png)
+When all segments on a production job are confirmed (status
+`translated` or `reviewed`), two buttons appear in the top bar:
 
-Cethos shows you the estimated cost (~$0.08 per 1,000 words for
-production jobs that pass through Opus QA). Click **OK** to proceed.
+![Run QA and Deliver buttons](/training/translator/05-deliver-confirm.png)
+
+- **Run QA** (white button) — runs the full deterministic + Opus QA
+  pipeline. Lands you in the QA review pane to triage findings. You
+  can re-run after fixing things.
+- **Deliver** (navy button) — finalizes the job (`delivered`).
+  Independent of QA. Blocks only on unresolved CRITICAL findings.
+
+If your job has the AI QA toggle off (PM unchecked it at job
+creation), only **Deliver** appears — there's no Run QA option.
+
+Click **Run QA** to start the QA pipeline. The PM controls cost
+budgeting, so you don't see a price prompt; just confirm.
 
 The pipeline runs in two phases:
 
@@ -291,13 +303,18 @@ For each finding you have three actions:
 - **Reject** — keep your original target. You can leave a note
   explaining why; action `reject`.
 
-The **Confirm delivery** button at the top of the panel is disabled
-until every **critical** finding is resolved (accepted, edited, or
-rejected). Major and minor findings don't gate delivery — you can
-deliver with them open if you choose, but they remain on the record.
+The **Confirm delivery** button at the top of the panel — and the
+header **Deliver** button — are both disabled until every **critical**
+finding is resolved (accepted, edited, or rejected). Major and minor
+findings don't gate delivery; deliver with them open if you choose
+and they stay on the record.
 
-When you click **Confirm delivery**, the job flips to `delivered` and
-goes back to your PM. Done.
+You can also re-run QA from this state if you fixed things in the
+meantime. Click **Run QA** in the header again — Opus re-scans the
+current targets and replaces the open findings with a fresh set.
+
+When you click **Deliver** (or **Confirm delivery** in the panel),
+the job flips to `delivered` and goes back to your PM. Done.
 
 ### Test jobs
 
@@ -347,14 +364,16 @@ There is no password to manage — sign-in is OTP-only.
 1. Click **Open editor →** on a job in your inbox
 2. Walk top-to-bottom: 100% TM matches are already pre-filled — review
    each, click **Confirm** when right
-3. For empty rows, write the target; save frequently
-4. Once every row has a check icon (status `translated`), the **Deliver**
-   button lights up
-5. Click **Deliver** → review the cost estimate → OK
-6. When QA review pane appears, work through findings (accept / edit /
-   reject)
-7. Click **Confirm delivery** when no critical findings remain — the
-   job is done
+3. For empty rows, write the target; save frequently. Keep `{N}`
+   placeholders intact (use **Copy tags** if you forgot any)
+4. Once every row has a check icon (status `translated`), the
+   **Run QA** and **Deliver** buttons light up in the header
+5. (Optional) Click **Run QA** → confirm → wait for findings
+6. When the QA review pane appears, work through findings (accept /
+   edit / reject). You can re-run QA from this state too.
+7. Click **Deliver** (or **Confirm delivery** in the panel) when no
+   critical findings remain — the job is done. If you want to ship
+   without QA, click **Deliver** straight from step 4.
 
 ### B. Recover from a paste mistake
 
