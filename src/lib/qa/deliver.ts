@@ -23,6 +23,7 @@
 import { getServiceClient } from "@/lib/supabase/server";
 import { runQaForJob } from "./run";
 import { runOpusQa, mapOpusSeverity, type OpusFinding } from "./opus";
+import { recordTestSubmissionWithVendorPortal } from "./record-test-submission";
 
 export interface QaRunResult {
   ok: true;
@@ -51,7 +52,7 @@ async function loadJob(jobId: string) {
   const supabase = await getServiceClient();
   const { data: job } = await supabase
     .from("jobs")
-    .select("id, status, source_lang, target_lang, job_class, qa_enabled, assigned_to")
+    .select("id, status, source_lang, target_lang, job_class, qa_enabled, assigned_to, external_ref")
     .eq("id", jobId)
     .maybeSingle();
   return { supabase, job };
@@ -139,9 +140,22 @@ export async function finalizeDelivery(jobId: string, userId: string): Promise<D
   const blocker = await assertAllConfirmed(jobId);
   if (blocker) return { ok: false, error: blocker };
 
-  // Test jobs short-circuit to submitted.
+  // Test jobs short-circuit to submitted, then notify the vendor portal so
+  // it can flip cvp_test_submissions / combinations and trigger AI grading.
+  // Vendor-portal callback is best-effort — TM-side state is the source of
+  // truth, and a reconciliation job replays missed callbacks.
   if (job.job_class === "test") {
     await supabase.from("jobs").update({ status: "submitted" }).eq("id", jobId);
+    const callbackResult = await recordTestSubmissionWithVendorPortal({
+      jobId,
+      externalRef: (job as { external_ref: string | null }).external_ref ?? null,
+    });
+    if (!callbackResult.ok) {
+      console.warn("vendor-portal test submission callback skipped", {
+        jobId,
+        reason: callbackResult.reason,
+      });
+    }
     return { ok: true, status: "submitted", job_class: "test" };
   }
 

@@ -37,5 +37,9 @@ export const env = {
   portal: {
     url: opt(process.env.PORTAL_SUPABASE_URL),
     serviceRoleKey: opt(process.env.PORTAL_SUPABASE_SERVICE_ROLE_KEY),
+    // Shared secret used when TM-Cethos calls the vendor-portal
+    // cvp-record-tm-submission endpoint after a test delivery. Must match
+    // the vendor portal's TM_INBOUND_KEY Supabase secret.
+    tmInboundKey: opt(process.env.PORTAL_TM_INBOUND_KEY),
   },
 };
