@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { signInAction } from "./actions";
 
 export default async function SignInPage({
@@ -6,26 +5,13 @@ export default async function SignInPage({
 }: {
   searchParams: Promise<{
     error?: string;
-    error_code?: string;
-    error_description?: string;
     info?: string;
     next?: string;
     email?: string;
   }>;
 }) {
   const sp = await searchParams;
-  // Supabase recovery links that have expired or are otherwise invalid land
-  // back here as ?error=access_denied&error_code=otp_expired&error_description=…
-  // Detect that and surface a friendlier message with a clear next step.
-  const isExpiredRecovery =
-    sp.error === "access_denied" && sp.error_code === "otp_expired";
-  const friendlyError = isExpiredRecovery
-    ? "Your password-reset link has expired. Request a new one below."
-    : sp.error
-    ? decodeURIComponent(sp.error_description ?? sp.error)
-    : null;
-  // ?info= renders in the green success chip (e.g. "Password updated. Sign
-  // in with your new password.") to differentiate from real errors.
+  const errorMsg = sp.error ? decodeURIComponent(sp.error) : null;
   const infoMsg = sp.info ? decodeURIComponent(sp.info) : null;
   return (
     <div className="bg-white rounded-xl shadow-[var(--shadow-soft)] border border-[color:var(--color-border)] p-8">
@@ -38,17 +24,9 @@ export default async function SignInPage({
         </div>
       )}
 
-      {friendlyError && (
+      {errorMsg && (
         <div className="mt-4 text-sm rounded-md border border-[color:var(--color-rose-100)] bg-[color:var(--color-rose-50)] text-[color:var(--color-rose-600)] px-3 py-2">
-          <div>{friendlyError}</div>
-          {isExpiredRecovery && (
-            <Link
-              href="/forgot-password"
-              className="mt-2 inline-block text-xs font-semibold text-[color:var(--color-teal-700)] hover:underline"
-            >
-              Request a new password-reset link →
-            </Link>
-          )}
+          {errorMsg}
         </div>
       )}
 
