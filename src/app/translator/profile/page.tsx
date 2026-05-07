@@ -22,7 +22,7 @@ export default async function ProfilePage() {
           </div>
           <div>
             <div className="text-xs uppercase tracking-wide text-[color:var(--color-slate-500)] font-bold mb-1">Status</div>
-            <div className="text-[color:var(--color-navy)] capitalize">{me.status}</div>
+            <div className="text-[color:var(--color-navy)] capitalize">{me.is_active ? "active" : "inactive"}</div>
           </div>
         </div>
       </div>
