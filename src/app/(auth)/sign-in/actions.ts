@@ -100,9 +100,49 @@ export async function signInAction(formData: FormData): Promise<void> {
 }
 
 /**
- * Sign-out works the same as before — clear Supabase session + MFA cookie.
+ * Sign-out clears whichever auth backend is in use.
+ *
+ *   - Legacy: Supabase session cookies + cethos_mfa cookie.
+ *   - New (cethos-auth): cethos_session_tm cookie + cethos_sessions row.
+ *
+ * Best-effort on both paths — if the user holds only one cookie, the
+ * other branch is a no-op and we still land them on /sign-in clean.
  */
 export async function signOutAction(): Promise<void> {
+  // Path A — cethos-auth session: revoke server-side, clear cookie.
+  const { cookies } = await import("next/headers");
+  const { revokeSession, buildExpiredSessionCookie } = await import(
+    "@/lib/cethos-auth/sessions"
+  );
+  const { SESSION_COOKIE_NAME: CETHOS_COOKIE } = await import(
+    "@/lib/cethos-auth/schema"
+  );
+  const cookieStore = await cookies();
+  const cethosId = cookieStore.get(CETHOS_COOKIE)?.value;
+  if (cethosId) {
+    try {
+      await revokeSession(cethosId);
+      await audit({ category: "auth", action: "sign_out", actorId: cethosId });
+    } catch (e) {
+      console.warn(
+        "[sign-out] cethos session revoke failed:",
+        e instanceof Error ? e.message : String(e),
+      );
+    }
+    const expired = buildExpiredSessionCookie();
+    cookieStore.set({
+      name: expired.name,
+      value: expired.value,
+      httpOnly: expired.httpOnly,
+      secure: expired.secure,
+      sameSite: expired.sameSite,
+      path: expired.path,
+      domain: expired.domain,
+      maxAge: expired.maxAge,
+    });
+  }
+
+  // Path B — legacy Supabase Auth: signOut + clear MFA cookie.
   const { getServerClient } = await import("@/lib/supabase/server");
   const supabase = await getServerClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -112,5 +152,6 @@ export async function signOutAction(): Promise<void> {
   }
   const { clearMfaCookie } = await import("@/lib/auth/mfa-cookie");
   await clearMfaCookie();
+
   redirect("/sign-in");
 }

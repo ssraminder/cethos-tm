@@ -48,8 +48,14 @@ export interface CethosSession {
   last_seen_at: string;
 }
 
-/** Cookie that carries the session id across all *.cethos.com subdomains. */
-export const SESSION_COOKIE_NAME = "cethos_session";
+/**
+ * Cookie that carries the TM session id. Per-portal naming
+ * (`cethos_session_<portal>`) so vendor + TM + admin can each set their
+ * own cookie on `.cethos.com` without one overwriting the other when a
+ * user crosses subdomains. See docs/migration/00-overview-federated-sso.md
+ * in the admin repo for the full federated-SSO model.
+ */
+export const SESSION_COOKIE_NAME = "cethos_session_tm";
 
 /** Default session lifetime — 30 days, sliding refresh on each request. */
 export const SESSION_TTL_DAYS = 30;
