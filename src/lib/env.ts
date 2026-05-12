@@ -28,9 +28,18 @@ export const env = {
     fromEmail: opt(process.env.MAILGUN_FROM_EMAIL, "Cethos CAT <noreply@cethos.local>"),
   },
   vendorPortal: {
-    issuer: opt(process.env.VENDOR_PORTAL_JWT_ISSUER),
-    audience: opt(process.env.VENDOR_PORTAL_JWT_AUDIENCE, "cethos-cat"),
-    jwksUrl: opt(process.env.VENDOR_PORTAL_JWKS_URL),
+    // Default issuer matches what vendor portal sets on its tokens
+    // (jwt.ts in cethos-vendor). If unset, jose's strict-issuer check
+    // is bypassed; setting it explicitly is preferred in production.
+    issuer: opt(process.env.VENDOR_PORTAL_JWT_ISSUER, "https://vendor.cethos.com"),
+    // Default audience matches the "tm" target in vendor's sso-issue
+    // function. Override via env if a different string is preferred.
+    audience: opt(process.env.VENDOR_PORTAL_JWT_AUDIENCE, "cethos-tm"),
+    // Default JWKS URL points at vendor portal's public key endpoint.
+    jwksUrl: opt(
+      process.env.VENDOR_PORTAL_JWKS_URL,
+      "https://vendor.cethos.com/.well-known/jwks.json",
+    ),
   },
   // Shared admin/vendor-portal Supabase backend — read-only source for
   // clients and vendors. Service role key required for admin-only tables.
