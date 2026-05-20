@@ -164,6 +164,10 @@ export function SegmentRow({
   highlightedSource,
   qaFindings,
   showMt,
+  sourceLangCode,
+  targetLangCode,
+  sourceRtl,
+  targetRtl,
   onActivate,
 }: {
   segment: Segment;
@@ -180,6 +184,10 @@ export function SegmentRow({
    * at job-creation time.
    */
   showMt: boolean;
+  sourceLangCode: string;
+  targetLangCode: string;
+  sourceRtl: boolean;
+  targetRtl: boolean;
   /**
    * Called when this row becomes the focused/active segment (focus or click).
    * The wrapper uses this to drive the right pane's lookup.
@@ -353,7 +361,13 @@ export function SegmentRow({
       </div>
 
       <div className="text-sm leading-relaxed mono whitespace-pre-wrap text-[color:var(--color-navy)]">
-        {highlightedSource}
+        <div
+          dir={sourceRtl ? "rtl" : "ltr"}
+          lang={sourceLangCode}
+          className={sourceRtl ? "text-right" : ""}
+        >
+          {highlightedSource}
+        </div>
         {termHits.length > 0 && (
           <ul className="mt-1.5 flex flex-wrap gap-1 font-sans">
             {termHits.slice(0, 5).map((h, i) => (
@@ -394,7 +408,13 @@ export function SegmentRow({
               <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-[color:var(--color-purple-500)] text-white uppercase">{mt.engine}</span>
               <span className="text-[10px] text-[color:var(--color-slate-500)]">Machine translation</span>
             </div>
-            <div className="text-xs mono text-[color:var(--color-navy)]">{mt.target_text}</div>
+            <div
+              dir={targetRtl ? "rtl" : "ltr"}
+              lang={targetLangCode}
+              className={`text-xs mono text-[color:var(--color-navy)] ${targetRtl ? "text-right" : ""}`}
+            >
+              {mt.target_text}
+            </div>
             {mt.warning && <div className="text-[10px] text-[color:var(--color-amber-600)] mt-1 italic">{mt.warning}</div>}
             {!readOnly && (
               <div className="mt-1.5 flex gap-2">
@@ -455,10 +475,13 @@ export function SegmentRow({
           disabled={readOnly || isPending}
           placeholder={readOnly ? "(read-only)" : "Type translation…"}
           rows={Math.max(2, Math.min(8, Math.ceil(segment.source_text.length / 60)))}
+          dir={targetRtl ? "rtl" : "ltr"}
+          lang={targetLangCode}
           className={[
             "w-full text-sm leading-relaxed mono rounded-md px-2 py-1.5 border resize-y",
             "border-[color:var(--color-slate-200)] focus:outline-none focus:border-[color:var(--color-teal)] focus:ring-[3px] focus:ring-[color:var(--color-teal)]/20",
             readOnly ? "bg-[color:var(--color-slate-50)] text-[color:var(--color-slate-500)]" : "bg-white",
+            targetRtl ? "text-right" : "",
           ].join(" ")}
         />
         {origin && originBadge[origin] && (

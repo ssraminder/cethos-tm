@@ -42,6 +42,10 @@ export function EditorBodyClient({
   qaFindingsById,
   sourceLangLabel,
   targetLangLabel,
+  sourceLangCode,
+  targetLangCode,
+  sourceRtl,
+  targetRtl,
 }: {
   jobId: string;
   readOnly: boolean;
@@ -54,6 +58,10 @@ export function EditorBodyClient({
   qaFindingsById: Record<string, QaFindingDisplay[]>;
   sourceLangLabel: string;
   targetLangLabel: string;
+  sourceLangCode: string;
+  targetLangCode: string;
+  sourceRtl: boolean;
+  targetRtl: boolean;
 }) {
   const [active, setActive] = useState<{ id: string; source_text: string } | null>(
     null,
@@ -88,6 +96,10 @@ export function EditorBodyClient({
                   highlightedSource={highlightedSourceById[s.id]}
                   qaFindings={qaFindingsById[s.id] ?? []}
                   showMt={showMt}
+                  sourceLangCode={sourceLangCode}
+                  targetLangCode={targetLangCode}
+                  sourceRtl={sourceRtl}
+                  targetRtl={targetRtl}
                   onActivate={(seg) => setActive(seg)}
                 />
               ))}
@@ -103,6 +115,10 @@ export function EditorBodyClient({
         activeSegmentTermHits={activeTermHits}
         sourceLangLabel={sourceLangLabel}
         targetLangLabel={targetLangLabel}
+        sourceLangCode={sourceLangCode}
+        targetLangCode={targetLangCode}
+        sourceRtl={sourceRtl}
+        targetRtl={targetRtl}
       />
     </div>
   );
