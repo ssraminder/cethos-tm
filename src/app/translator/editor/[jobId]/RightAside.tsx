@@ -43,6 +43,10 @@ export function RightAside({
   activeSegmentTermHits,
   sourceLangLabel,
   targetLangLabel,
+  sourceLangCode,
+  targetLangCode,
+  sourceRtl,
+  targetRtl,
 }: {
   jobId: string;
   readOnly: boolean;
@@ -51,7 +55,12 @@ export function RightAside({
   activeSegmentTermHits: TermHit[];
   sourceLangLabel: string;
   targetLangLabel: string;
+  sourceLangCode: string;
+  targetLangCode: string;
+  sourceRtl: boolean;
+  targetRtl: boolean;
 }) {
+  const langProps = { sourceLangCode, targetLangCode, sourceRtl, targetRtl };
   const [tab, setTab] = useState<Tab>("matches");
 
   return (
@@ -80,6 +89,7 @@ export function RightAside({
             activeSegmentSource={activeSegmentSource}
             sourceLangLabel={sourceLangLabel}
             targetLangLabel={targetLangLabel}
+            {...langProps}
           />
         )}
         {tab === "term" && (
@@ -88,6 +98,7 @@ export function RightAside({
             termHits={activeSegmentTermHits}
             sourceLangLabel={sourceLangLabel}
             targetLangLabel={targetLangLabel}
+            {...langProps}
           />
         )}
         {tab === "tm-search" && (
@@ -95,6 +106,7 @@ export function RightAside({
             jobId={jobId}
             sourceLangLabel={sourceLangLabel}
             targetLangLabel={targetLangLabel}
+            {...langProps}
           />
         )}
         {tab === "glossary" && (
@@ -102,6 +114,7 @@ export function RightAside({
             jobId={jobId}
             sourceLangLabel={sourceLangLabel}
             targetLangLabel={targetLangLabel}
+            {...langProps}
           />
         )}
       </div>
@@ -158,6 +171,10 @@ function MatchesTab({
   activeSegmentSource,
   sourceLangLabel,
   targetLangLabel,
+  sourceLangCode,
+  targetLangCode,
+  sourceRtl,
+  targetRtl,
 }: {
   jobId: string;
   readOnly: boolean;
@@ -165,6 +182,10 @@ function MatchesTab({
   activeSegmentSource: string | null;
   sourceLangLabel: string;
   targetLangLabel: string;
+  sourceLangCode: string;
+  targetLangCode: string;
+  sourceRtl: boolean;
+  targetRtl: boolean;
 }) {
   const [matches, setMatches] = useState<TmMatch[] | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -248,11 +269,19 @@ function MatchesTab({
             </span>
           </div>
           <FieldLabel kind="source" lang={sourceLangLabel} />
-          <div className="text-xs mono text-[color:var(--color-slate-700)] mb-1.5">
+          <div
+            dir={sourceRtl ? "rtl" : "ltr"}
+            lang={sourceLangCode}
+            className={`text-xs mono text-[color:var(--color-slate-700)] mb-1.5 ${sourceRtl ? "text-right" : ""}`}
+          >
             {m.source_text}
           </div>
           <FieldLabel kind="target" lang={targetLangLabel} />
-          <div className="text-xs mono text-[color:var(--color-navy)]">
+          <div
+            dir={targetRtl ? "rtl" : "ltr"}
+            lang={targetLangCode}
+            className={`text-xs mono text-[color:var(--color-navy)] ${targetRtl ? "text-right" : ""}`}
+          >
             {m.target_text}
           </div>
           {!readOnly && (
@@ -286,11 +315,19 @@ function TermbaseTab({
   termHits,
   sourceLangLabel,
   targetLangLabel,
+  sourceLangCode,
+  targetLangCode,
+  sourceRtl,
+  targetRtl,
 }: {
   activeSegmentId: string | null;
   termHits: TermHit[];
   sourceLangLabel: string;
   targetLangLabel: string;
+  sourceLangCode: string;
+  targetLangCode: string;
+  sourceRtl: boolean;
+  targetRtl: boolean;
 }) {
   if (!activeSegmentId) {
     return (
@@ -325,7 +362,11 @@ function TermbaseTab({
             >
               {sourceLangLabel}
             </span>
-            <span className="font-semibold text-[color:var(--color-slate-700)]">
+            <span
+              dir={sourceRtl ? "rtl" : "ltr"}
+              lang={sourceLangCode}
+              className="font-semibold text-[color:var(--color-slate-700)]"
+            >
               {h.source_term}
             </span>
             <span className="text-[color:var(--color-slate-400)]">→</span>
@@ -336,6 +377,8 @@ function TermbaseTab({
               {targetLangLabel}
             </span>
             <span
+              dir={targetRtl ? "rtl" : "ltr"}
+              lang={targetLangCode}
               className={
                 h.target_status === "forbidden"
                   ? "line-through text-[color:var(--color-rose-600)] font-semibold"
@@ -362,10 +405,18 @@ function TmSearchTab({
   jobId,
   sourceLangLabel,
   targetLangLabel,
+  sourceLangCode,
+  targetLangCode,
+  sourceRtl,
+  targetRtl,
 }: {
   jobId: string;
   sourceLangLabel: string;
   targetLangLabel: string;
+  sourceLangCode: string;
+  targetLangCode: string;
+  sourceRtl: boolean;
+  targetRtl: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<TmSearchResult[] | null>(null);
@@ -426,11 +477,19 @@ function TmSearchTab({
               className="rounded border border-[color:var(--color-border)] bg-[color:var(--color-slate-50)] p-2"
             >
               <FieldLabel kind="source" lang={sourceLangLabel} />
-              <div className="text-xs mono text-[color:var(--color-slate-700)] mb-1.5">
+              <div
+                dir={sourceRtl ? "rtl" : "ltr"}
+                lang={sourceLangCode}
+                className={`text-xs mono text-[color:var(--color-slate-700)] mb-1.5 ${sourceRtl ? "text-right" : ""}`}
+              >
                 {r.source_text}
               </div>
               <FieldLabel kind="target" lang={targetLangLabel} />
-              <div className="text-xs mono text-[color:var(--color-navy)]">
+              <div
+                dir={targetRtl ? "rtl" : "ltr"}
+                lang={targetLangCode}
+                className={`text-xs mono text-[color:var(--color-navy)] ${targetRtl ? "text-right" : ""}`}
+              >
                 {r.target_text}
               </div>
               <div className="flex items-center justify-between mt-1.5 text-[10px] text-[color:var(--color-slate-500)]">
@@ -453,10 +512,18 @@ function GlossarySearchTab({
   jobId,
   sourceLangLabel,
   targetLangLabel,
+  sourceLangCode,
+  targetLangCode,
+  sourceRtl,
+  targetRtl,
 }: {
   jobId: string;
   sourceLangLabel: string;
   targetLangLabel: string;
+  sourceLangCode: string;
+  targetLangCode: string;
+  sourceRtl: boolean;
+  targetRtl: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<GlossaryHit[] | null>(null);
@@ -523,7 +590,11 @@ function GlossarySearchTab({
                 >
                   {sourceLangLabel}
                 </span>
-                <span className="font-semibold text-[color:var(--color-slate-700)]">
+                <span
+                  dir={sourceRtl ? "rtl" : "ltr"}
+                  lang={sourceLangCode}
+                  className="font-semibold text-[color:var(--color-slate-700)]"
+                >
                   {r.source_term}
                 </span>
                 <span className="text-[color:var(--color-slate-400)]">→</span>
@@ -534,6 +605,8 @@ function GlossarySearchTab({
                   {targetLangLabel}
                 </span>
                 <span
+                  dir={targetRtl ? "rtl" : "ltr"}
+                  lang={targetLangCode}
                   className={
                     r.target_status === "forbidden"
                       ? "line-through text-[color:var(--color-rose-600)]"

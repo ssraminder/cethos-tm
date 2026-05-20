@@ -9,6 +9,7 @@ import { HighlightedSource } from "./HighlightedSource";
 import { RealtimeJobStatus } from "@/components/RealtimeJobStatus";
 import { DeliverButton } from "./DeliverButton";
 import { QaReviewPanel, type QaReviewFinding } from "./QaReviewPanel";
+import { isRtlCode } from "@/lib/i18n/rtl";
 
 export default async function EditorPage({
   params,
@@ -192,6 +193,8 @@ export default async function EditorPage({
           jobId={jobId}
           findings={reviewFindings}
           unresolvedCriticalCount={unresolvedCriticalCount}
+          targetLangCode={job.target_lang}
+          targetRtl={isRtlCode(job.target_lang)}
         />
       )}
 
@@ -230,6 +233,10 @@ export default async function EditorPage({
           showMt={isStaff}
           sourceLangLabel={sourceLangName ?? job.source_lang}
           targetLangLabel={targetLangName ?? job.target_lang}
+          sourceLangCode={job.source_lang}
+          targetLangCode={job.target_lang}
+          sourceRtl={isRtlCode(job.source_lang)}
+          targetRtl={isRtlCode(job.target_lang)}
           segments={(segments ?? []) as never}
           highlightedSourceById={Object.fromEntries(
             (segments ?? []).map((s) => {

@@ -32,10 +32,14 @@ export function QaReviewPanel({
   jobId,
   findings,
   unresolvedCriticalCount,
+  targetLangCode,
+  targetRtl,
 }: {
   jobId: string;
   findings: QaReviewFinding[];
   unresolvedCriticalCount: number;
+  targetLangCode?: string;
+  targetRtl?: boolean;
 }) {
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
@@ -134,8 +138,12 @@ export function QaReviewPanel({
               </div>
               <div className="mt-1 text-[color:var(--color-slate-700)]">{f.message}</div>
               {f.suggested_target && (
-                <div className="mt-1 rounded bg-[color:var(--color-emerald-50)] border border-[color:var(--color-emerald-200)] p-1.5 mono text-[11px] text-[color:var(--color-emerald-800)]">
-                  <span className="text-[10px] font-bold text-[color:var(--color-emerald-700)] mr-1">Suggested:</span>
+                <div
+                  dir={targetRtl ? "rtl" : "ltr"}
+                  lang={targetLangCode}
+                  className={`mt-1 rounded bg-[color:var(--color-emerald-50)] border border-[color:var(--color-emerald-200)] p-1.5 mono text-[11px] text-[color:var(--color-emerald-800)] ${targetRtl ? "text-right" : ""}`}
+                >
+                  <span className="text-[10px] font-bold text-[color:var(--color-emerald-700)] mr-1" dir="ltr">Suggested:</span>
                   {f.suggested_target}
                 </div>
               )}
