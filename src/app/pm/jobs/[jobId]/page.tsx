@@ -133,6 +133,12 @@ export default async function JobDetail({
             {job.source_format === "json" && (
               <a href={`/api/jobs/${job.id}/export-json`} className="px-3 py-2 text-sm font-semibold rounded-md border border-[color:var(--color-slate-200)] bg-white">Download JSON</a>
             )}
+            {(job.source_format === "sdlxliff" || job.source_format === "sdlppx") && (
+              <a href={`/api/jobs/${job.id}/export-sdlxliff`} className="px-3 py-2 text-sm font-semibold rounded-md border border-[color:var(--color-slate-200)] bg-white">Download SDLXLIFF</a>
+            )}
+            {(job.source_format === "sdlxliff" || job.source_format === "sdlppx") && (
+              <a href={`/api/jobs/${job.id}/export-sdlppx?type=sdlrpx`} className="px-3 py-2 text-sm font-semibold rounded-md border border-[color:var(--color-slate-200)] bg-white">Download SDL Return Package</a>
+            )}
           </div>
         }
       />
