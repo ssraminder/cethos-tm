@@ -11,6 +11,8 @@ import { extractPptxBuffer } from "@/lib/jobs/pptx-extraction";
 import { extractJsonBuffer } from "@/lib/jobs/json-extraction";
 import { segmentText, totalWords, type Segment } from "@/lib/jobs/segmentation";
 import { parseXliff } from "@/lib/xliff/parse";
+import { parseSdlXliff } from "@/lib/xliff/sdlxliff";
+import { parseSdlPackage } from "@/lib/xliff/sdl-package";
 import { generateJobReference } from "@/lib/jobs/reference";
 import { getOrCreateDefaultTm } from "@/lib/tm/default-tm";
 
@@ -70,16 +72,36 @@ export async function createJobFromBuffer(input: CreateJobInput): Promise<Create
   let actualSource = input.source_lang;
   let actualTarget = input.target_lang;
 
-  if (format === "xliff") {
-    const parsed = parseXliff(input.source_buffer);
-    if (parsed.source_lang) actualSource = parsed.source_lang;
-    if (parsed.target_lang) actualTarget = parsed.target_lang;
-    if (actualSource === actualTarget) throw new Error("XLIFF source and target languages identical.");
-    if (parsed.units.length === 0) throw new Error("XLIFF contained no translatable units.");
+  if (format === "xliff" || format === "sdlxliff" || format === "sdlppx") {
+    let allUnits: import("@/lib/xliff/parse").XliffUnit[];
+    let parsedSourceLang: string;
+    let parsedTargetLang: string;
+
+    if (format === "sdlppx") {
+      const pkg = await parseSdlPackage(input.source_buffer);
+      allUnits = pkg.all_units;
+      parsedSourceLang = pkg.source_lang;
+      parsedTargetLang = pkg.target_lang;
+    } else if (format === "sdlxliff") {
+      const parsed = parseSdlXliff(input.source_buffer);
+      allUnits = parsed.units;
+      parsedSourceLang = parsed.source_lang;
+      parsedTargetLang = parsed.target_lang;
+    } else {
+      const parsed = parseXliff(input.source_buffer);
+      allUnits = parsed.units;
+      parsedSourceLang = parsed.source_lang;
+      parsedTargetLang = parsed.target_lang;
+    }
+
+    if (parsedSourceLang) actualSource = parsedSourceLang;
+    if (parsedTargetLang) actualTarget = parsedTargetLang;
+    if (actualSource === actualTarget) throw new Error("Source and target languages identical.");
+    if (allUnits.length === 0) throw new Error("File contained no translatable units.");
     segments = [];
     preTargets = new Map();
     segmentTags = new Map();
-    parsed.units.forEach((u, i) => {
+    allUnits.forEach((u, i) => {
       const seq = i + 1;
       const norm = u.source_text.normalize("NFC").replace(/\s+/g, " ").trim().toLowerCase();
       segments.push({

@@ -10,7 +10,7 @@ import {
   type OoxmlParagraphSegment,
 } from "./ooxml-tags";
 
-export type SupportedFormat = "txt" | "md" | "html" | "docx" | "xlsx" | "pptx" | "json" | "xliff" | "unknown";
+export type SupportedFormat = "txt" | "md" | "html" | "docx" | "xlsx" | "pptx" | "json" | "xliff" | "sdlxliff" | "sdlppx" | "unknown";
 
 export function detectFormat(filename: string, mimeType: string | undefined): SupportedFormat {
   const lower = filename.toLowerCase();
@@ -21,7 +21,9 @@ export function detectFormat(filename: string, mimeType: string | undefined): Su
   if (lower.endsWith(".md") || lower.endsWith(".markdown")) return "md";
   if (lower.endsWith(".html") || lower.endsWith(".htm")) return "html";
   if (lower.endsWith(".json")) return "json";
+  if (lower.endsWith(".sdlxliff")) return "sdlxliff";
   if (lower.endsWith(".xliff") || lower.endsWith(".xlf")) return "xliff";
+  if (lower.endsWith(".sdlppx") || lower.endsWith(".sdlrpx")) return "sdlppx";
   if (mimeType?.includes("wordprocessingml")) return "docx";
   if (mimeType?.includes("spreadsheetml")) return "xlsx";
   if (mimeType?.includes("presentationml")) return "pptx";
@@ -76,9 +78,11 @@ export async function extractText(buffer: Buffer, format: SupportedFormat): Prom
     }
 
     case "xliff":
-      // XLIFF is bilingual — caller must use parseXliff() instead of going
-      // through the plain-text segmenter. Reaching this branch is a bug.
-      throw new Error("XLIFF should be ingested via parseXliff(), not extractText().");
+    case "sdlxliff":
+      throw new Error("XLIFF/SDLXLIFF should be ingested via parseXliff()/parseSdlXliff(), not extractText().");
+
+    case "sdlppx":
+      throw new Error("SDL packages should be ingested via parseSdlPackage(), not extractText().");
 
     case "unknown":
     default:
@@ -134,7 +138,11 @@ export async function extractParagraphsWithTags(
     }
 
     case "xliff":
-      throw new Error("XLIFF should be ingested via parseXliff(), not extractParagraphsWithTags().");
+    case "sdlxliff":
+      throw new Error("XLIFF/SDLXLIFF should be ingested via parseXliff()/parseSdlXliff(), not extractParagraphsWithTags().");
+
+    case "sdlppx":
+      throw new Error("SDL packages should be ingested via parseSdlPackage(), not extractParagraphsWithTags().");
 
     case "unknown":
     default:
