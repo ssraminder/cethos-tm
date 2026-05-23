@@ -13,6 +13,8 @@ import {
 } from "@/lib/jobs/extraction";
 import { segmentText, totalWords, type Segment } from "@/lib/jobs/segmentation";
 import { parseXliff } from "@/lib/xliff/parse";
+import { parseSdlXliff } from "@/lib/xliff/sdlxliff";
+import { parseSdlPackage } from "@/lib/xliff/sdl-package";
 import { extractXlsxBuffer } from "@/lib/jobs/xlsx-extraction";
 import { extractPptxBuffer } from "@/lib/jobs/pptx-extraction";
 import { extractJsonBuffer } from "@/lib/jobs/json-extraction";
@@ -78,25 +80,39 @@ export async function createJobFromUploadAction(formData: FormData): Promise<voi
   let segmentLocations: Map<number, unknown> | null = null;
   let actualSourceLang = source_lang;
   let actualTargetLang = target_lang;
-  if (format === "xliff") {
-    let parsed;
+  if (format === "xliff" || format === "sdlxliff" || format === "sdlppx") {
+    let allUnits: import("@/lib/xliff/parse").XliffUnit[];
     try {
-      parsed = parseXliff(buffer);
+      if (format === "sdlppx") {
+        const pkg = await parseSdlPackage(buffer);
+        allUnits = pkg.all_units;
+        if (pkg.source_lang) actualSourceLang = pkg.source_lang;
+        if (pkg.target_lang) actualTargetLang = pkg.target_lang;
+      } else if (format === "sdlxliff") {
+        const parsed = parseSdlXliff(buffer);
+        allUnits = parsed.units;
+        if (parsed.source_lang) actualSourceLang = parsed.source_lang;
+        if (parsed.target_lang) actualTargetLang = parsed.target_lang;
+      } else {
+        const parsed = parseXliff(buffer);
+        allUnits = parsed.units;
+        if (parsed.source_lang) actualSourceLang = parsed.source_lang;
+        if (parsed.target_lang) actualTargetLang = parsed.target_lang;
+      }
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "XLIFF parse failed";
+      const msg = e instanceof Error ? e.message : "Parse failed";
       redirect(`/pm/jobs/new?error=${encodeURIComponent(msg)}`);
     }
-    if (parsed!.source_lang) actualSourceLang = parsed!.source_lang;
-    if (parsed!.target_lang) actualTargetLang = parsed!.target_lang;
     if (actualSourceLang === actualTargetLang) {
-      redirect(`/pm/jobs/new?error=${encodeURIComponent("XLIFF source and target languages are identical.")}`);
+      redirect(`/pm/jobs/new?error=${encodeURIComponent("Source and target languages are identical.")}`);
     }
-    if (parsed!.units.length === 0) {
-      redirect(`/pm/jobs/new?error=${encodeURIComponent("XLIFF contained no translatable units.")}`);
+    if (allUnits!.length === 0) {
+      redirect(`/pm/jobs/new?error=${encodeURIComponent("File contained no translatable units.")}`);
     }
     segments = [];
     preTargets = new Map();
-    parsed!.units.forEach((u, i) => {
+    segmentTags = new Map();
+    allUnits!.forEach((u, i) => {
       const seq = i + 1;
       const norm = u.source_text.normalize("NFC").replace(/\s+/g, " ").trim().toLowerCase();
       segments.push({
@@ -109,6 +125,7 @@ export async function createJobFromUploadAction(formData: FormData): Promise<voi
         const isFinal = u.approved === true || u.state === "translated" || u.state === "final";
         preTargets!.set(seq, { text: u.target_text.trim(), status: isFinal ? "translated" : "draft" });
       }
+      if (u.source_tags && u.source_tags.length > 0) segmentTags!.set(seq, u.source_tags as unknown[]);
     });
   } else if (format === "docx" || format === "html") {
     // Tag-preserving path. Each paragraph (including table cells, list

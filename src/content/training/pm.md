@@ -211,7 +211,7 @@ loose on it (one-off urgents, anything outside the TMS push API).
 Fields:
 
 - **Source file** — `.txt`, `.md`, `.html`, `.docx`, `.xlsx`, `.pptx`,
-  `.json`, `.xliff`/`.xlf`. Max 50 MB.
+  `.json`, `.xliff`/`.xlf`, `.sdlxliff`, `.sdlppx`/`.sdlrpx`. Max 50 MB.
 - **Source / target language** — BCP-47 dropdowns
 - **Reference (optional)** — human label; auto-generates `J-YYYYMM-XXXX`
   if blank
@@ -269,6 +269,8 @@ structure so you can ship the finished translation back in the
 | PowerPoint     | `.pptx`       | **Download PowerPoint** — slides + notes |
 | JSON i18n      | `.json`       | **Download JSON** — paths + types preserved |
 | XLIFF          | `.xliff/.xlf` | **Download XLIFF** — bilingual round-trip |
+| SDLXLIFF       | `.sdlxliff`   | SDL Trados bilingual — ingests sub-segments, exports as XLIFF |
+| SDL Package    | `.sdlppx/.sdlrpx` | SDL project/return package — all files merged into one job |
 | Plain          | `.txt/.md`    | **Download TXT** — target only |
 | HTML           | `.html`       | One-way (no round-trip yet) |
 
