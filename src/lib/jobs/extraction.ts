@@ -12,6 +12,32 @@ import {
 
 export type SupportedFormat = "txt" | "md" | "html" | "docx" | "xlsx" | "pptx" | "json" | "xliff" | "sdlxliff" | "sdlppx" | "unknown";
 
+const MIME_BY_EXT: Record<string, string> = {
+  ".sdlxliff": "application/x-xliff+xml",
+  ".sdlppx": "application/zip",
+  ".sdlrpx": "application/zip",
+  ".xliff": "application/x-xliff+xml",
+  ".xlf": "application/x-xliff+xml",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ".json": "application/json",
+  ".txt": "text/plain",
+  ".md": "text/plain",
+  ".html": "text/html",
+  ".htm": "text/html",
+};
+
+export function resolveContentType(filename: string, browserMime?: string): string {
+  if (browserMime && browserMime !== "application/octet-stream") return browserMime;
+  const dot = filename.lastIndexOf(".");
+  if (dot >= 0) {
+    const ext = filename.slice(dot).toLowerCase();
+    if (MIME_BY_EXT[ext]) return MIME_BY_EXT[ext];
+  }
+  return browserMime || "application/octet-stream";
+}
+
 export function detectFormat(filename: string, mimeType: string | undefined): SupportedFormat {
   const lower = filename.toLowerCase();
   if (lower.endsWith(".docx")) return "docx";

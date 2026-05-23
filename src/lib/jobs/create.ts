@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { getServiceClient } from "@/lib/supabase/server";
 import {
   detectFormat,
+  resolveContentType,
   extractText,
   extractParagraphsWithTags,
   type SupportedFormat,
@@ -235,7 +236,7 @@ export async function createJobFromBuffer(input: CreateJobInput): Promise<Create
   const { error: uploadErr } = await supabase.storage
     .from(STORAGE_BUCKET)
     .upload(storagePath, input.source_buffer, {
-      contentType: input.source_mime_type || "application/octet-stream",
+      contentType: resolveContentType(input.source_filename, input.source_mime_type),
       upsert: false,
     });
   if (uploadErr) {

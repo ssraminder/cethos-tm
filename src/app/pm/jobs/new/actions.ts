@@ -7,6 +7,7 @@ import { getServerClient, getServiceClient } from "@/lib/supabase/server";
 import { requireRole } from "@/lib/auth/current-user";
 import {
   detectFormat,
+  resolveContentType,
   extractText,
   extractParagraphsWithTags,
   type SupportedFormat,
@@ -317,7 +318,7 @@ export async function createJobFromUploadAction(formData: FormData): Promise<voi
   const { error: uploadErr } = await service.storage
     .from(STORAGE_BUCKET)
     .upload(storagePath, buffer, {
-      contentType: file!.type || "application/octet-stream",
+      contentType: resolveContentType(file!.name, file!.type),
       upsert: false,
     });
   if (uploadErr) {
