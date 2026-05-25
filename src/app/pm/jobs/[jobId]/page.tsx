@@ -5,6 +5,7 @@ import { getServiceClient } from "@/lib/supabase/server";
 import { requireRole } from "@/lib/auth/current-user";
 import { assignJobAction } from "./actions";
 import { runQaAction } from "./qa-actions";
+import { startReviewAction, approveJobAction, requestRevisionAction } from "./review-actions";
 import { attachTmToJobAction, detachTmFromJobAction } from "@/app/admin/tm/actions";
 import { attachTermbaseToJobAction, detachTermbaseFromJobAction } from "@/app/admin/termbases/actions";
 import { RealtimeJobStatus } from "@/components/RealtimeJobStatus";
@@ -172,6 +173,61 @@ export default async function JobDetail({
           </form>
         </div>
       </div>
+
+      {/* PM Review panel */}
+      {job.status === "delivered" && (
+        <div className="mb-6 bg-white rounded-xl border-2 border-[color:var(--color-amber-300)] p-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm font-bold text-[color:var(--color-amber-700)]">Awaiting PM review</div>
+              <div className="text-xs text-[color:var(--color-slate-500)] mt-1">The translator has delivered this job. Start a review to inspect the translation and approve or request revisions.</div>
+            </div>
+            <form action={startReviewAction}>
+              <input type="hidden" name="job_id" value={job.id} />
+              <button type="submit" className="px-4 py-2 text-sm font-semibold rounded-md bg-[color:var(--color-amber-500)] hover:bg-[color:var(--color-amber-600)] text-white">Start Review</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {job.status === "pm_review" && (
+        <div className="mb-6 bg-white rounded-xl border-2 border-[color:var(--color-teal-300)] p-5">
+          <div className="text-sm font-bold text-[color:var(--color-teal-700)] mb-3">Review in progress</div>
+          <div className="text-xs text-[color:var(--color-slate-500)] mb-4">Open the editor to review all segments, run QA for automated checks, then approve or request revisions.</div>
+          <div className="flex items-center gap-3">
+            <form action={approveJobAction}>
+              <input type="hidden" name="job_id" value={job.id} />
+              <button type="submit" className="px-4 py-2 text-sm font-semibold rounded-md bg-[color:var(--color-emerald-600)] hover:bg-[color:var(--color-emerald-700)] text-white">Approve</button>
+            </form>
+            <details className="group">
+              <summary className="px-4 py-2 text-sm font-semibold rounded-md border border-[color:var(--color-rose-300)] text-[color:var(--color-rose-600)] cursor-pointer hover:bg-[color:var(--color-rose-50)]">Request Revision</summary>
+              <form action={requestRevisionAction} className="mt-3 p-3 bg-[color:var(--color-rose-50)] rounded-md">
+                <input type="hidden" name="job_id" value={job.id} />
+                <label className="block text-xs font-semibold text-[color:var(--color-slate-600)] mb-1">Revision notes (optional)</label>
+                <textarea name="revision_note" rows={3} placeholder="Describe what needs to be fixed..." className="w-full rounded-md border border-[color:var(--color-slate-200)] bg-white px-3 py-2 text-sm" />
+                <button type="submit" className="mt-2 px-4 py-2 text-sm font-semibold rounded-md bg-[color:var(--color-rose-600)] hover:bg-[color:var(--color-rose-700)] text-white">Send back to translator</button>
+              </form>
+            </details>
+          </div>
+        </div>
+      )}
+
+      {job.status === "approved" && (
+        <div className="mb-6 bg-white rounded-xl border-2 border-[color:var(--color-emerald-300)] p-5">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">✓</span>
+            <div className="text-sm font-bold text-[color:var(--color-emerald-700)]">Approved</div>
+          </div>
+          <div className="text-xs text-[color:var(--color-slate-500)] mt-1">This translation has been reviewed and approved by the PM.</div>
+        </div>
+      )}
+
+      {job.status === "revision_requested" && (
+        <div className="mb-6 bg-white rounded-xl border-2 border-[color:var(--color-rose-300)] p-5">
+          <div className="text-sm font-bold text-[color:var(--color-rose-700)]">Revision requested</div>
+          <div className="text-xs text-[color:var(--color-slate-500)] mt-1">Sent back to the translator for corrections. Once re-delivered, you can review again.</div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="bg-white rounded-xl border border-[color:var(--color-border)] p-5">

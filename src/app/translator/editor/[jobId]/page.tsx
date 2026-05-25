@@ -40,11 +40,12 @@ export default async function EditorPage({
   const sourceLangName = langNameByCode.get(job.source_lang) ?? null;
   const targetLangName = langNameByCode.get(job.target_lang) ?? null;
 
-  const readOnly = !isAssignedToMe || (job.status !== "assigned" && job.status !== "in_progress");
+  const readOnly = !isAssignedToMe || (job.status !== "assigned" && job.status !== "in_progress" && job.status !== "revision_requested");
 
   const jobClass: "production" | "test" = (job.job_class as "production" | "test" | null) ?? "production";
   const qaEnabledFlag: boolean = job.qa_enabled !== false;
   const inQaReview = job.status === "qa_review";
+  const inPmReview = job.status === "pm_review";
   const inQaRunning = job.status === "qa_running";
 
   let q = supabase
@@ -98,7 +99,7 @@ export default async function EditorPage({
   // QA review-pane data: when job is in qa_review, load all unresolved
   // findings linked to a run (or deterministic ones).
   const reviewFindings: QaReviewFinding[] = [];
-  if (inQaReview && segIdsForFindings.length > 0) {
+  if ((inQaReview || inPmReview) && segIdsForFindings.length > 0) {
     const segById = new Map<string, { seq: number; source: string; target: string }>();
     for (const s of (segments ?? []) as Array<{ id: string; seq: number; source_text: string; target_text: string }>) {
       segById.set(s.id, { seq: s.seq, source: s.source_text, target: s.target_text });
@@ -153,6 +154,8 @@ export default async function EditorPage({
     !inQaRunning &&
     job.status !== "delivered" &&
     job.status !== "submitted" &&
+    job.status !== "pm_review" &&
+    job.status !== "approved" &&
     counts.confirmed === counts.total &&
     counts.total > 0;
 
@@ -169,6 +172,8 @@ export default async function EditorPage({
           {jobClass === "test" && <span className="ml-2 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-[color:var(--color-amber-100)] text-[color:var(--color-amber-800)]">Test</span>}
           {inQaRunning && <span className="ml-2 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-[color:var(--color-amber-100)] text-[color:var(--color-amber-800)]">QA running…</span>}
           {inQaReview && <span className="ml-2 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-[color:var(--color-rose-100)] text-[color:var(--color-rose-800)]">QA review</span>}
+          {job.status === "pm_review" && <span className="ml-2 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-[color:var(--color-teal-100)] text-[color:var(--color-teal-800)]">PM review</span>}
+          {job.status === "revision_requested" && <span className="ml-2 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-[color:var(--color-rose-100)] text-[color:var(--color-rose-800)]">Revision requested</span>}
         </div>
         <div className="flex-1" />
         <div className="flex items-center gap-3">
@@ -188,7 +193,7 @@ export default async function EditorPage({
         </div>
       </header>
 
-      {inQaReview && (
+      {(inQaReview || inPmReview) && (
         <QaReviewPanel
           jobId={jobId}
           findings={reviewFindings}
