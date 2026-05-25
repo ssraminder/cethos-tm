@@ -4,14 +4,16 @@ import { getServiceClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-const ACTIVE_STATUSES = ["draft", "assigned", "in_progress", "review", "qa_running", "qa_review"];
+const ACTIVE_STATUSES = ["draft", "assigned", "in_progress", "review", "qa_running", "qa_review", "delivered", "pm_review", "revision_requested"];
 
 export default async function PmDashboard() {
   const supabase = await getServiceClient();
 
-  const [activeRes, qaRes, overdueRes, jobsRes] = await Promise.all([
+  const [activeRes, qaRes, pmReviewRes, deliveredRes, overdueRes, jobsRes] = await Promise.all([
     supabase.from("jobs").select("id", { count: "exact", head: true }).in("status", ACTIVE_STATUSES),
     supabase.from("jobs").select("id", { count: "exact", head: true }).eq("status", "qa_review"),
+    supabase.from("jobs").select("id", { count: "exact", head: true }).eq("status", "pm_review"),
+    supabase.from("jobs").select("id", { count: "exact", head: true }).eq("status", "delivered"),
     supabase
       .from("jobs")
       .select("id", { count: "exact", head: true })
@@ -27,6 +29,8 @@ export default async function PmDashboard() {
 
   const active = activeRes.count ?? 0;
   const awaitingQa = qaRes.count ?? 0;
+  const awaitingPmReview = pmReviewRes.count ?? 0;
+  const delivered = deliveredRes.count ?? 0;
   const overdue = overdueRes.count ?? 0;
   const jobs = jobsRes.data ?? [];
 
@@ -83,8 +87,18 @@ export default async function PmDashboard() {
   return (
     <>
       <PageHeader title="Dashboard" subtitle="Active jobs, translator workload, and alerts." />
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <KpiCard label="Active jobs" value={String(active)} hint="Not closed or delivered" />
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+        <KpiCard label="Active jobs" value={String(active)} hint="All non-approved jobs" />
+        <KpiCard
+          label="Delivered"
+          value={String(delivered)}
+          hint={delivered > 0 ? "Ready to start PM review" : "No deliveries pending"}
+        />
+        <KpiCard
+          label="PM review"
+          value={String(awaitingPmReview)}
+          hint={awaitingPmReview > 0 ? "You're reviewing these" : "No jobs in review"}
+        />
         <KpiCard
           label="Awaiting QA review"
           value={String(awaitingQa)}
@@ -95,7 +109,6 @@ export default async function PmDashboard() {
           value={String(overdue)}
           hint={overdue > 0 ? "Past deadline — chase up" : "All deadlines clear"}
         />
-        <KpiCard label="Recent jobs" value={String(jobs.length)} hint="Top 8 by deadline" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
