@@ -10,9 +10,12 @@
  * This route (Vercel cron, see vercel.json) closes the loop:
  *   1. Find TM jobs with job_class='test', status='submitted' and
  *      external_ref='test_submission:<uuid>'.
- *   2. Look up their cvp_test_submissions rows in the portal DB (we hold the
- *      portal service-role key). Rows already 'submitted'/'assessed' are
- *      healthy; anything else means the callback was lost.
+ *   2. Look up their cvp_test_submissions rows: directly via the portal
+ *      service-role client when PORTAL_SUPABASE_SERVICE_ROLE_KEY is set,
+ *      otherwise via the portal's cvp-tm-submission-status edge function
+ *      (authed with the same PORTAL_TM_INBOUND_KEY as the record callback).
+ *      Rows already 'submitted'/'assessed' are healthy; anything else means
+ *      the callback was lost.
  *   3. Replay the callback with skipApplicantEmail=true. The portal endpoint
  *      is idempotent, so a race with a late-arriving original callback is
  *      harmless (alreadyRecorded=true).
@@ -62,17 +65,65 @@ function isAuthorized(req: Request): boolean {
   return ua.startsWith("vercel-cron/");
 }
 
+/**
+ * Current cvp_test_submissions.status for each candidate. Prefers a direct
+ * portal-DB read; falls back to the cvp-tm-submission-status edge function
+ * when the service-role key isn't provisioned (as in TM's Vercel prod env,
+ * which only holds the inbound shared secret). Throws with a short reason on
+ * failure so the handler can surface it.
+ */
+async function fetchPortalStatuses(candidates: CandidateJob[]): Promise<Map<string, string>> {
+  const statuses = new Map<string, string>();
+  if (candidates.length === 0) return statuses;
+
+  if (isPortalConfigured()) {
+    const portal = getPortalClient();
+    for (let i = 0; i < candidates.length; i += PORTAL_QUERY_CHUNK) {
+      const chunk = candidates.slice(i, i + PORTAL_QUERY_CHUNK).map((c) => c.submissionId);
+      const { data: rows, error } = await portal
+        .from("cvp_test_submissions")
+        .select("id, status")
+        .in("id", chunk);
+      if (error) throw new Error(`portal_query_failed: ${error.message}`);
+      for (const r of (rows ?? []) as Array<{ id: string; status: string }>) {
+        statuses.set(r.id, r.status);
+      }
+    }
+    return statuses;
+  }
+
+  const portalUrl = (env.portal.url ?? "").replace(/\/$/, "");
+  const inboundKey = env.portal.tmInboundKey;
+  if (!portalUrl || !inboundKey) {
+    throw new Error("portal_not_configured");
+  }
+  const resp = await fetch(`${portalUrl}/functions/v1/cvp-tm-submission-status`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${inboundKey}`,
+    },
+    body: JSON.stringify({ submissionIds: candidates.map((c) => c.submissionId) }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  const json = (await resp.json().catch(() => ({}))) as {
+    success?: boolean;
+    error?: string;
+    data?: { statuses?: Array<{ id: string; status: string }> };
+  };
+  if (!resp.ok || !json.success) {
+    throw new Error(`portal_status_endpoint_failed: ${json.error ?? `http_${resp.status}`}`);
+  }
+  for (const r of json.data?.statuses ?? []) {
+    statuses.set(r.id, r.status);
+  }
+  return statuses;
+}
+
 async function handle(req: Request): Promise<NextResponse> {
   if (!isAuthorized(req)) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
-  if (!isPortalConfigured()) {
-    return NextResponse.json(
-      { ok: false, error: "portal_supabase_not_configured" },
-      { status: 503 },
-    );
-  }
-
   const url = new URL(req.url);
   const requestedCap = Number(url.searchParams.get("limit") ?? DEFAULT_REPLAY_CAP);
   const replayCap = Math.min(
@@ -104,23 +155,15 @@ async function handle(req: Request): Promise<NextResponse> {
   }
 
   // 2) Portal-side status for each candidate.
-  const portal = getPortalClient();
-  const portalStatus = new Map<string, string>();
-  for (let i = 0; i < candidates.length; i += PORTAL_QUERY_CHUNK) {
-    const chunk = candidates.slice(i, i + PORTAL_QUERY_CHUNK).map((c) => c.submissionId);
-    const { data: rows, error: portalErr } = await portal
-      .from("cvp_test_submissions")
-      .select("id, status")
-      .in("id", chunk);
-    if (portalErr) {
-      return NextResponse.json(
-        { ok: false, error: `portal_query_failed: ${portalErr.message}` },
-        { status: 502 },
-      );
-    }
-    for (const r of (rows ?? []) as Array<{ id: string; status: string }>) {
-      portalStatus.set(r.id, r.status);
-    }
+  let portalStatus: Map<string, string>;
+  try {
+    portalStatus = await fetchPortalStatuses(candidates);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return NextResponse.json(
+      { ok: false, error: message },
+      { status: message === "portal_not_configured" ? 503 : 502 },
+    );
   }
 
   const stuck = candidates.filter((c) => {
