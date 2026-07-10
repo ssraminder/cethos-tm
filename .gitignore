@@ -12,3 +12,6 @@ next-env.d.ts
 .idea
 .vscode
 _stitch-export/node_modules
+
+# supabase CLI scratch
+supabase/.temp/
