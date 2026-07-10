@@ -20,6 +20,11 @@ export const env = {
   // Server-only
   supabaseServiceRoleKey: opt(process.env.SUPABASE_SERVICE_ROLE_KEY),
   appSecret: opt(process.env.APP_SECRET, "dev-only-change-me"),
+  // Bearer secret for /api/cron/* routes. When set in Vercel, the platform
+  // automatically sends it as `Authorization: Bearer <CRON_SECRET>` on cron
+  // invocations. Manual replay triggers can present the same bearer (or the
+  // portal inbound key — see the cron route).
+  cronSecret: opt(process.env.CRON_SECRET),
   appBaseUrl: opt(process.env.APP_BASE_URL, "http://localhost:3000"),
   mailgun: {
     apiKey: opt(process.env.MAILGUN_API_KEY),
