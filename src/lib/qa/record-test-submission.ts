@@ -14,11 +14,16 @@
  *
  * Failure mode: this is best-effort. The translator's submit must not be
  * blocked if the vendor portal call fails — TM-side delivery state is the
- * source of truth, and a separate reconciliation can replay missed
- * callbacks. We log loudly and return ok=false so the caller can decide.
+ * source of truth. The call retries with exponential backoff (non-2xx and
+ * fetch exceptions are both retryable; the portal endpoint is idempotent),
+ * and a final failure is written to tm_errors so it is visible in the admin
+ * dashboard instead of only in function logs. The scheduled replay job
+ * (/api/cron/replay-test-submissions) picks up anything that still slips
+ * through.
  */
 
 import { env } from "@/lib/env";
+import { logTmError } from "@/lib/errors/tm-errors";
 import { getServiceClient } from "@/lib/supabase/server";
 
 const TEST_SUBMISSION_REF_PREFIX = "test_submission:";
@@ -60,6 +65,24 @@ interface RecordArgs {
   skipApplicantEmail?: boolean;
 }
 
+// Retry tuning. The callback runs inside the translator's deliver request
+// (and inside the replay cron), so the worst case must stay well under the
+// route's execution ceiling: 3 attempts × 8s timeout + 0.5s + 1s backoff.
+// The typical failure (portal returns 5xx quickly) only costs ~1.5s extra.
+const MAX_ATTEMPTS = 3;
+const ATTEMPT_TIMEOUT_MS = 8_000;
+const BACKOFF_BASE_MS = 500;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+interface PortalResponse {
+  success?: boolean;
+  error?: string;
+  data?: { submissionId?: string; alreadyRecorded?: boolean };
+}
+
 export async function recordTestSubmissionWithVendorPortal(
   args: RecordArgs,
 ): Promise<RecordTestSubmissionResult> {
@@ -79,49 +102,90 @@ export async function recordTestSubmissionWithVendorPortal(
     return { ok: false, reason: "no_translated_segments" };
   }
 
-  try {
-    const resp = await fetch(`${portalUrl}/functions/v1/cvp-record-tm-submission`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${inboundKey}`,
-      },
-      body: JSON.stringify({
-        submissionId,
-        submittedContent,
-        tmJobId: args.jobId,
-        skipApplicantEmail: args.skipApplicantEmail === true,
-      }),
-    });
-    const json = (await resp.json().catch(() => ({}))) as {
-      success?: boolean;
-      error?: string;
-      data?: { submissionId?: string; alreadyRecorded?: boolean };
-    };
-    if (!resp.ok || !json.success) {
+  let lastReason = "unknown";
+  let lastStatus: number | null = null;
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const resp = await fetch(`${portalUrl}/functions/v1/cvp-record-tm-submission`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${inboundKey}`,
+        },
+        body: JSON.stringify({
+          submissionId,
+          submittedContent,
+          tmJobId: args.jobId,
+          skipApplicantEmail: args.skipApplicantEmail === true,
+        }),
+        signal: AbortSignal.timeout(ATTEMPT_TIMEOUT_MS),
+      });
+      const json = (await resp.json().catch(() => ({}))) as PortalResponse;
+      if (resp.ok && json.success) {
+        if (attempt > 1) {
+          // Recovered after a failed attempt — leave a warn-level trace so we
+          // can see how often the portal needs retries.
+          await logTmError({
+            route: "qa/record-test-submission",
+            action: "portal_callback_recovered",
+            severity: "warn",
+            message: `cvp-record-tm-submission succeeded on attempt ${attempt}/${MAX_ATTEMPTS} (previous failure: ${lastReason})`,
+            context: { attempt, lastReason, lastStatus },
+            test_submission_id: submissionId,
+            job_id: args.jobId,
+          });
+        }
+        return {
+          ok: true,
+          submissionId,
+          alreadyRecorded: json.data?.alreadyRecorded === true,
+        };
+      }
+      // Non-2xx (or 2xx without success:true) — retryable. Even 4xx responses
+      // are worth retrying here: they are cheap, and transient states like a
+      // portal deploy or a not-yet-visible submission row can clear up.
+      lastReason = json.error ?? `http_${resp.status}`;
+      lastStatus = resp.status;
       console.error("cvp-record-tm-submission failed", {
         jobId: args.jobId,
         submissionId,
+        attempt,
         status: resp.status,
         body: json,
       });
-      return {
-        ok: false,
-        reason: json.error ?? `http_${resp.status}`,
+    } catch (err) {
+      lastReason = err instanceof Error && err.name === "TimeoutError" ? "fetch_timeout" : "fetch_threw";
+      lastStatus = null;
+      console.error("cvp-record-tm-submission threw", {
+        jobId: args.jobId,
         submissionId,
-      };
+        attempt,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
-    return {
-      ok: true,
-      submissionId,
-      alreadyRecorded: json.data?.alreadyRecorded === true,
-    };
-  } catch (err) {
-    console.error("cvp-record-tm-submission threw", {
-      jobId: args.jobId,
-      submissionId,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return { ok: false, reason: "fetch_threw", submissionId };
+    if (attempt < MAX_ATTEMPTS) {
+      await sleep(BACKOFF_BASE_MS * 2 ** (attempt - 1));
+    }
   }
+
+  // All attempts exhausted — record durably so the loss is visible in the
+  // admin dashboard (tm_errors), not just in ephemeral function logs. The
+  // replay cron will pick this submission up as long as the job stays
+  // status='submitted' and the portal row is not submitted/assessed.
+  await logTmError({
+    route: "qa/record-test-submission",
+    action: "portal_callback_failed",
+    severity: "error",
+    message: `cvp-record-tm-submission failed after ${MAX_ATTEMPTS} attempts: ${lastReason}`,
+    context: {
+      attempts: MAX_ATTEMPTS,
+      lastReason,
+      lastStatus,
+      skipApplicantEmail: args.skipApplicantEmail === true,
+    },
+    test_submission_id: submissionId,
+    job_id: args.jobId,
+  });
+  return { ok: false, reason: lastReason, submissionId };
 }
