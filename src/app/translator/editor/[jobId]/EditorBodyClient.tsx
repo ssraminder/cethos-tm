@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from "react";
 import { SegmentRow, type QaFindingDisplay } from "./SegmentRow";
 import { RightAside } from "./RightAside";
+import { ImagePane, type ImagePageView, type ImageRegionView } from "./ImagePane";
 import type { TmMatch } from "@/lib/tm/match";
 import type { TermHit } from "@/lib/termbase/hits";
 
@@ -36,6 +37,7 @@ export function EditorBodyClient({
   readOnly,
   showMt,
   segments,
+  image,
   highlightedSourceById,
   topMatchById,
   termHitsById,
@@ -51,6 +53,8 @@ export function EditorBodyClient({
   readOnly: boolean;
   showMt: boolean;
   segments: SegmentForClient[];
+  /** Set for image jobs: page images and one region per segment. */
+  image?: { pages: ImagePageView[]; regions: ImageRegionView[] } | null;
   // Maps from segment_id to the per-segment data the row needs.
   highlightedSourceById: Record<string, ReactNode>;
   topMatchById: Record<string, TmMatch | null>;
@@ -69,8 +73,35 @@ export function EditorBodyClient({
 
   const activeTermHits: TermHit[] = active ? termHitsById[active.id] ?? [] : [];
 
+  const isImageJob = !!image && image.pages.length > 0;
+
+  // Picking a region on the page selects its row: focus the row's target box
+  // (which also fires the row's own onActivate) and bring it into view.
+  const pickSegment = (segmentId: string) => {
+    const seg = segments.find((s) => s.id === segmentId);
+    if (seg) setActive({ id: seg.id, source_text: seg.source_text });
+    const row = document.querySelector<HTMLElement>(`[data-seg-id="${segmentId}"]`);
+    if (!row) return;
+    row.scrollIntoView({ block: "center", behavior: "smooth" });
+    row.querySelector<HTMLTextAreaElement>("textarea:not([disabled])")?.focus({ preventScroll: true });
+  };
+
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] h-full min-h-0">
+    <div
+      className={[
+        "grid grid-cols-1 h-full min-h-0",
+        isImageJob ? "lg:grid-cols-[minmax(360px,44%)_1fr]" : "lg:grid-cols-[1fr_360px]",
+      ].join(" ")}
+    >
+      {isImageJob && (
+        <ImagePane
+          pages={image!.pages}
+          regions={image!.regions}
+          activeSegmentId={active?.id ?? null}
+          readOnly={readOnly}
+          onPick={pickSegment}
+        />
+      )}
       <div className="flex flex-col min-h-0 overflow-hidden border-r border-[color:var(--color-border)]">
         <div className="flex-1 overflow-y-auto">
           {segments.length === 0 ? (
@@ -87,7 +118,9 @@ export function EditorBodyClient({
               </div>
               {segments.map((s) => (
                 <SegmentRow
-                  key={s.id}
+                  // A corrected source reading or an "illegible" mark changes the row
+                  // on the server; the key makes the row pick the new text up.
+                  key={`${s.id}:${s.source_text}:${s.target_text === "[illegible]"}`}
                   segment={s}
                   readOnly={readOnly}
                   jobId={jobId}
@@ -107,6 +140,7 @@ export function EditorBodyClient({
           )}
         </div>
       </div>
+      {!isImageJob && (
       <RightAside
         jobId={jobId}
         readOnly={readOnly}
@@ -120,6 +154,7 @@ export function EditorBodyClient({
         sourceRtl={sourceRtl}
         targetRtl={targetRtl}
       />
+      )}
     </div>
   );
 }
