@@ -120,3 +120,45 @@ export async function markIllegibleAction(input: { segment_id: string }): Promis
   });
   return { ok: true };
 }
+
+const CommentsSchema = z.object({
+  job_id: z.string().uuid(),
+  comments: z.string().max(4000),
+});
+
+/**
+ * Notes from the translator to the project manager. They are printed on an
+ * internal last page of the certified document, which the PM removes before
+ * the document is signed and delivered.
+ */
+export async function saveTranslatorCommentsAction(input: { job_id: string; comments: string }): Promise<ImageActionResult> {
+  const me = await getCurrentUser();
+  const parsed = CommentsSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Comments are too long (4,000 characters at most)." };
+
+  const supabase = await getServiceClient();
+  const { data: job } = await supabase
+    .from("jobs")
+    .select("id, assigned_to, reviewer_id, source_format, meta")
+    .eq("id", parsed.data.job_id)
+    .maybeSingle();
+  if (!job) return { ok: false, error: "Job not found" };
+  const allowed = job.assigned_to === me.id || job.reviewer_id === me.id || me.role === "admin" || me.role === "pm";
+  if (!allowed) return { ok: false, error: "Not your job" };
+  if (job.source_format !== "image") return { ok: false, error: "Comments are only kept for image jobs" };
+
+  const meta = { ...((job.meta as Record<string, unknown> | null) ?? {}), translator_comments: parsed.data.comments.trim() };
+  const { error } = await supabase.from("jobs").update({ meta }).eq("id", job.id);
+  if (error) return { ok: false, error: error.message };
+
+  await audit({
+    category: "job",
+    action: "translator_comments_saved",
+    actorId: me.id,
+    actorEmail: me.email,
+    targetType: "job",
+    targetId: job.id,
+    meta: { length: parsed.data.comments.trim().length },
+  });
+  return { ok: true };
+}

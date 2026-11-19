@@ -95,7 +95,7 @@ export default async function EditorPage({
 
   // Image jobs: signed page images plus one region per visible segment, for
   // the editor's image pane. Signed URLs last an hour; a reload renews them.
-  let imageView: { pages: ImagePageView[]; regions: ImageRegionView[] } | null = null;
+  let imageView: { pages: ImagePageView[]; regions: ImageRegionView[]; comments: string; canComment: boolean } | null = null;
   const storedPages = ((job.meta as { image?: { pages?: StoredImagePage[] } } | null)?.image?.pages ?? []) as StoredImagePage[];
   if (job.source_format === "image" && storedPages.length > 0) {
     const { data: signed } = await supabase.storage
@@ -127,7 +127,13 @@ export default async function EditorPage({
         findings: (findingsBySeg.get(s.id) ?? []).map((f) => ({ severity: f.severity, message: f.message })),
       });
     }
-    imageView = { pages, regions };
+    imageView = {
+      pages,
+      regions,
+      comments: ((job.meta as { translator_comments?: string } | null)?.translator_comments ?? "") as string,
+      // The translator, the reviser and staff can leave notes for the PM.
+      canComment: isAssignedToMe || isStaff || job.reviewer_id === me.id,
+    };
   }
   // Segment meta (tag inventories, locations) stays on the server.
   const clientSegments = (segments ?? []).map((s) => {
