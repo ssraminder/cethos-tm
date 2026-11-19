@@ -51,10 +51,10 @@ export async function exportCertifiedTranslation(jobId: string): Promise<{ buffe
   const personName = (id: string | null) => (id ? (people ?? []).find((p) => p.id === id)?.full_name ?? null : null);
 
   const now = new Date();
-  const meta = (job.meta ?? {}) as { document_type?: string };
+  const meta = (job.meta ?? {}) as { document_type?: string; order_number?: string };
   const buffer = await buildCertifiedDocx({
     reference: job.reference,
-    orderNumber: job.external_ref ?? null,
+    orderNumber: meta.order_number ?? job.external_ref ?? null,
     documentName: job.source_filename ?? "document",
     documentType: meta.document_type ?? null,
     sourceLanguage: langName(job.source_lang),

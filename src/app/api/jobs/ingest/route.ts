@@ -25,7 +25,15 @@ const ContentSchema = z.object({
   // May this job's content go to third-party AI (DeepL, Google, Claude)?
   // Omit to use the client's default; with no client that is false.
   third_party_ai_allowed: z.boolean().optional(),
+  // Shown on the certified translation page of an image job.
+  // document_type reads as a noun phrase, e.g. "a driver's licence".
+  document_type: z.string().trim().min(1).max(120).optional(),
+  order_number: z.string().trim().min(1).max(64).optional(),
 });
+
+// Image and PDF sources go through OCR before the job exists, which can take
+// longer than the platform's default limit when the OCR service is waking up.
+export const maxDuration = 60;
 
 function bearer(req: NextRequest): string | null {
   const h = req.headers.get("authorization") ?? req.headers.get("Authorization");
@@ -53,6 +61,8 @@ function bearer(req: NextRequest): string | null {
  *   "tm_ids": ["uuid", ...],                        // optional
  *   "termbase_ids": ["uuid", ...],                  // optional
  *   "third_party_ai_allowed": false,                // optional, default = client's setting, else false
+ *   "document_type": "a driver's licence",          // optional, image jobs: title of the certified page
+ *   "order_number": "26-00612",                     // optional, image jobs: shown on the certified page
  *   "deadline": "2026-05-01T17:00:00Z"              // optional ISO-8601
  * }
  *
@@ -149,6 +159,10 @@ export async function POST(req: NextRequest) {
       tm_ids: p.tm_ids,
       termbase_ids: p.termbase_ids,
       third_party_ai_allowed: p.third_party_ai_allowed,
+      meta: {
+        ...(p.document_type ? { document_type: p.document_type } : {}),
+        ...(p.order_number ? { order_number: p.order_number } : {}),
+      },
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Ingest failed";
