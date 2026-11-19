@@ -17,6 +17,7 @@ import { parseSdlPackage } from "@/lib/xliff/sdl-package";
 import { generateJobReference } from "@/lib/jobs/reference";
 import { getOrCreateDefaultTm } from "@/lib/tm/default-tm";
 import { defaultThirdPartyAiForClient } from "@/lib/ai-policy";
+import { extractImageBuffer, saveImagePages, imagePagePaths, type ImageExtraction } from "@/lib/jobs/image-extraction";
 
 const STORAGE_BUCKET = "cat-source-files";
 
@@ -76,6 +77,7 @@ export async function createJobFromBuffer(input: CreateJobInput): Promise<Create
   let preTargets: Map<number, { text: string; status: "draft" | "translated" }> | null = null;
   let segmentTags: Map<number, unknown[]> | null = null;
   let segmentLocations: Map<number, unknown> | null = null;
+  let imageExtraction: ImageExtraction | null = null;
   let actualSource = input.source_lang;
   let actualTarget = input.target_lang;
 
@@ -123,6 +125,13 @@ export async function createJobFromBuffer(input: CreateJobInput): Promise<Create
       }
       if (u.source_tags && u.source_tags.length > 0) segmentTags!.set(seq, u.source_tags);
     });
+  } else if (format === "image") {
+    // Image / scanned PDF path: the self-hosted OCR service returns one text
+    // region per line; each becomes a segment with its position on the page.
+    imageExtraction = await extractImageBuffer(input.source_buffer);
+    if (imageExtraction.segments.length === 0) throw new Error("No readable text was found in the image.");
+    segments = imageExtraction.segments;
+    segmentLocations = new Map(imageExtraction.locations);
   } else if (format === "json") {
     // JSON path: each string-valued leaf becomes one segment, with its
     // JSON path stored in meta.location so the export can write back.
@@ -255,6 +264,16 @@ export async function createJobFromBuffer(input: CreateJobInput): Promise<Create
   }
   await supabase.from("jobs").update({ source_storage_path: storagePath }).eq("id", jobId);
 
+  if (imageExtraction) {
+    try {
+      await saveImagePages(supabase, jobId, imageExtraction);
+    } catch (e) {
+      await supabase.storage.from(STORAGE_BUCKET).remove([storagePath, ...imagePagePaths(jobId, imageExtraction)]);
+      await supabase.from("jobs").delete().eq("id", jobId);
+      throw e;
+    }
+  }
+
   const rows = segments.map((s) => {
     const pre = preTargets?.get(s.seq);
     const tags = segmentTags?.get(s.seq);
@@ -279,7 +298,9 @@ export async function createJobFromBuffer(input: CreateJobInput): Promise<Create
     const { error: segErr } = await supabase.from("segments").insert(slice);
     if (segErr) {
       await supabase.from("segments").delete().eq("job_id", jobId);
-      await supabase.storage.from(STORAGE_BUCKET).remove([storagePath]);
+      await supabase.storage
+        .from(STORAGE_BUCKET)
+        .remove([storagePath, ...(imageExtraction ? imagePagePaths(jobId, imageExtraction) : [])]);
       await supabase.from("jobs").delete().eq("id", jobId);
       throw new Error(`Segment insert failed: ${segErr.message}`);
     }
