@@ -54,7 +54,7 @@ export function EditorBodyClient({
   showMt: boolean;
   segments: SegmentForClient[];
   /** Set for image jobs: page images and one region per segment. */
-  image?: { pages: ImagePageView[]; regions: ImageRegionView[] } | null;
+  image?: { pages: ImagePageView[]; regions: ImageRegionView[]; comments: string; canComment: boolean } | null;
   // Maps from segment_id to the per-segment data the row needs.
   highlightedSourceById: Record<string, ReactNode>;
   topMatchById: Record<string, TmMatch | null>;
@@ -99,6 +99,9 @@ export function EditorBodyClient({
           regions={image!.regions}
           activeSegmentId={active?.id ?? null}
           readOnly={readOnly}
+          jobId={jobId}
+          initialComments={image!.comments}
+          canComment={image!.canComment}
           onPick={pickSegment}
         />
       )}

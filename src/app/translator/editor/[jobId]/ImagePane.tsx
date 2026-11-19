@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { correctSourceAction, markIllegibleAction } from "./image-actions";
+import { correctSourceAction, markIllegibleAction, saveTranslatorCommentsAction } from "./image-actions";
 
 /**
  * Left pane of the editor for image jobs (scanned PDFs, photos of ID
@@ -47,12 +47,19 @@ export function ImagePane({
   regions,
   activeSegmentId,
   readOnly,
+  jobId,
+  initialComments,
+  canComment,
   onPick,
 }: {
   pages: ImagePageView[];
   regions: ImageRegionView[];
   activeSegmentId: string | null;
   readOnly: boolean;
+  jobId: string;
+  /** The translator's notes for the project manager, as last saved. */
+  initialComments: string;
+  canComment: boolean;
   onPick: (segmentId: string) => void;
 }) {
   const router = useRouter();
@@ -62,6 +69,19 @@ export function ImagePane({
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [comments, setComments] = useState(initialComments);
+  const [savedComments, setSavedComments] = useState(initialComments);
+  const [commentsError, setCommentsError] = useState<string | null>(null);
+  const [savingComments, startSavingComments] = useTransition();
+
+  const saveComments = () => {
+    setCommentsError(null);
+    startSavingComments(async () => {
+      const res = await saveTranslatorCommentsAction({ job_id: jobId, comments });
+      if (!res.ok) setCommentsError(res.error);
+      else setSavedComments(comments);
+    });
+  };
 
   const active = regions.find((r) => r.segmentId === activeSegmentId) ?? null;
 
@@ -288,6 +308,42 @@ export function ImagePane({
             {error && <div className="text-xs text-[color:var(--color-rose-700)]">{error}</div>}
           </div>
         )}
+        <div className="mt-3 pt-3 border-t border-[color:var(--color-border)] flex flex-col gap-1.5">
+          <label className="text-xs font-semibold text-[color:var(--color-navy)] flex flex-col gap-1">
+            Comments for the project manager
+            <textarea
+              rows={2}
+              value={comments}
+              disabled={!canComment}
+              onChange={(e) => setComments(e.target.value)}
+              placeholder={
+                canComment
+                  ? "Anything the PM should know before certifying: unclear text, choices you made, questions for the client."
+                  : "No comments."
+              }
+              className="text-sm rounded-md border border-[color:var(--color-slate-300)] px-2 py-1.5 font-normal disabled:bg-[color:var(--color-slate-50)]"
+            />
+          </label>
+          <div className="text-[11px] text-[color:var(--color-slate-600)]">
+            Printed on an internal last page of the certified document. The PM removes that page before delivery.
+          </div>
+          {canComment && (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={savingComments || comments === savedComments}
+                onClick={saveComments}
+                className="px-3 py-2 text-xs font-semibold rounded-md bg-[color:var(--color-navy)] text-white disabled:opacity-50"
+              >
+                {savingComments ? "Saving..." : "Save comments"}
+              </button>
+              {comments === savedComments && savedComments !== initialComments && (
+                <span className="text-xs text-[color:var(--color-emerald-700)]">Saved</span>
+              )}
+              {commentsError && <span className="text-xs text-[color:var(--color-rose-700)]">{commentsError}</span>}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
