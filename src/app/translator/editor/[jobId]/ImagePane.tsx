@@ -30,6 +30,8 @@ export interface ImageRegionView {
   /** Current source text (differs from ocrText once a human corrects it). */
   sourceText: string;
   findings: Array<{ severity: string; message: string }>;
+  /** What the field looks like: a date, a number or identifier, or plain text. */
+  kind: "date" | "number" | "text";
 }
 
 /** Below this OCR confidence a field is outlined as needing a check. */
@@ -200,7 +202,12 @@ export function ImagePane({
         ) : (
           <div className="flex flex-col gap-2">
             <div className="flex items-baseline justify-between gap-2">
-              <div className="text-sm font-semibold text-[color:var(--color-navy)]">Field {active.seq}</div>
+              <div className="text-sm font-semibold text-[color:var(--color-navy)]">
+                Field {active.seq}
+                <span className="ml-2 text-xs font-semibold text-[color:var(--color-teal-700)]">
+                  {active.kind === "date" ? "Date" : active.kind === "number" ? "Number or identifier" : "Text"}
+                </span>
+              </div>
               <div className="text-xs text-[color:var(--color-slate-600)]">
                 OCR confidence{" "}
                 <span className="font-semibold text-[color:var(--color-navy)] tabular-nums">{Math.round(active.confidence * 100)}%</span>

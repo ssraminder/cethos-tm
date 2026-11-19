@@ -133,6 +133,7 @@ export function EditorBodyClient({
                   targetLangCode={targetLangCode}
                   sourceRtl={sourceRtl}
                   targetRtl={targetRtl}
+                  selected={isImageJob && active?.id === s.id}
                   onActivate={(seg) => setActive(seg)}
                 />
               ))}
