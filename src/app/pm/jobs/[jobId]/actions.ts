@@ -55,3 +55,56 @@ export async function assignJobAction(formData: FormData): Promise<void> {
 
   redirect(`/pm/jobs/${job_id}`);
 }
+
+const ThirdPartyAiSchema = z.object({
+  job_id: z.string().uuid(),
+  allowed: z.enum(["0", "1"]),
+});
+
+/**
+ * Turn the job's third-party AI switch on or off. When off, the job's text is
+ * never sent to DeepL, Google or Claude. Every change is audited.
+ */
+export async function setThirdPartyAiAction(formData: FormData): Promise<void> {
+  const me = await requireRole(["admin", "pm"]);
+  const parsed = ThirdPartyAiSchema.safeParse({
+    job_id: formData.get("job_id"),
+    allowed: formData.get("allowed"),
+  });
+  if (!parsed.success) {
+    redirect(`/pm/jobs?error=${encodeURIComponent("Invalid input")}`);
+  }
+  const { job_id } = parsed.data!;
+  const allowed = parsed.data!.allowed === "1";
+
+  const supabase = await getServiceClient();
+  const { data: prev } = await supabase
+    .from("jobs")
+    .select("third_party_ai_allowed")
+    .eq("id", job_id)
+    .maybeSingle();
+  if (!prev) redirect(`/pm/jobs?error=${encodeURIComponent("Job not found")}`);
+
+  const { error } = await supabase
+    .from("jobs")
+    .update({ third_party_ai_allowed: allowed })
+    .eq("id", job_id);
+  if (error) {
+    redirect(`/pm/jobs/${job_id}?error=${encodeURIComponent(error.message)}`);
+  }
+
+  const h = await headers();
+  await audit({
+    category: "job",
+    action: allowed ? "third_party_ai_allowed" : "third_party_ai_blocked",
+    actorId: me.id,
+    actorEmail: me.email,
+    targetType: "job",
+    targetId: job_id,
+    ip: h.get("x-forwarded-for")?.split(",")[0].trim() || null,
+    userAgent: h.get("user-agent") ?? null,
+    meta: { from: prev!.third_party_ai_allowed === true, to: allowed },
+  });
+
+  redirect(`/pm/jobs/${job_id}`);
+}

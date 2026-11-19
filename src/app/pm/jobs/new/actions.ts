@@ -32,6 +32,7 @@ const Schema = z.object({
   deadline: z.string().optional(),
   project_id: z.string().uuid().optional().or(z.literal("")),
   qa_enabled: z.string().optional(),
+  third_party_ai_allowed: z.string().optional(),
 });
 
 const STORAGE_BUCKET = "cat-source-files";
@@ -47,12 +48,14 @@ export async function createJobFromUploadAction(formData: FormData): Promise<voi
     deadline: formData.get("deadline") || undefined,
     project_id: formData.get("project_id") || undefined,
     qa_enabled: formData.get("qa_enabled") || undefined,
+    third_party_ai_allowed: formData.get("third_party_ai_allowed") || undefined,
   });
   if (!parsed.success) {
     redirect(`/pm/jobs/new?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid input")}`);
   }
   const { source_lang, target_lang, reference: refOverride, assigned_to, deadline, project_id } = parsed.data!;
   const qaEnabled = parsed.data!.qa_enabled === "1";
+  const thirdPartyAiAllowed = parsed.data!.third_party_ai_allowed === "1";
   if (source_lang === target_lang) {
     redirect(`/pm/jobs/new?error=${encodeURIComponent("Source and target languages must differ.")}`);
   }
@@ -301,6 +304,7 @@ export async function createJobFromUploadAction(formData: FormData): Promise<voi
     deadline: deadline || null,
     project_id: resolvedProjectId,
     qa_enabled: qaEnabled,
+    third_party_ai_allowed: thirdPartyAiAllowed,
   };
   const { data: job, error: jobErr } = await service
     .from("jobs")

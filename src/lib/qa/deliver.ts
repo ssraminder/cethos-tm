@@ -24,6 +24,7 @@ import { getServiceClient } from "@/lib/supabase/server";
 import { runQaForJob } from "./run";
 import { runOpusQa, mapOpusSeverity, type OpusFinding } from "./opus";
 import { recordTestSubmissionWithVendorPortal } from "./record-test-submission";
+import { isThirdPartyAiAllowed, auditThirdPartyAiCall } from "@/lib/ai-policy";
 
 export interface QaRunResult {
   ok: true;
@@ -99,6 +100,11 @@ export async function runQa(jobId: string, triggeredBy: string): Promise<QaRunRe
 
   if (!opusEnabled) {
     opusBlock = { inserted: 0, cost_usd: 0, aborted: false, skipped_reason: "QA_ENABLED=false" };
+  } else if (!(await isThirdPartyAiAllowed(jobId))) {
+    // The Opus pass sends source and target text to an outside provider, so
+    // it only runs when the job's third-party AI switch is on. The rule-based
+    // checks above have already run and stay available either way.
+    opusBlock = { inserted: 0, cost_usd: 0, aborted: false, skipped_reason: "third-party AI is off for this job" };
   } else if ((deterministic.findings_by_severity.critical ?? 0) > 0) {
     opusBlock = {
       inserted: 0,
@@ -243,6 +249,14 @@ async function runOpusPass(
     }
 
     const segments = segs.map((s) => ({ id: s.id, source: s.source_text, target: s.target_text }));
+
+    await auditThirdPartyAiCall({
+      jobId,
+      provider: "anthropic",
+      purpose: "qa_review",
+      actorId: triggeredBy,
+      meta: { qa_run_id: run.id, segments: segments.length },
+    });
 
     const result = await runOpusQa({
       sourceLang: job.source_lang,

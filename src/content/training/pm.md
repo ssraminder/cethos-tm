@@ -450,12 +450,27 @@ is hidden — the translator only sees Deliver.
 
 ### Per-job QA toggle (`jobs.qa_enabled`)
 
-- Set at job creation via the **Enable AI QA review** checkbox in the
+- Set at job creation via the **Enable QA review** checkbox in the
   PM new-job form.
 - Default: **on** for production jobs, **off** for test/recruitment
   jobs.
 - When off, the **Run QA** button is hidden in the editor. Deliver
   still works (and skips QA entirely).
+
+### Third-party AI switch (`jobs.third_party_ai_allowed`)
+
+- Controls whether a job's text may be sent to outside AI providers:
+  DeepL or Google (machine translation) and Claude (the Opus QA pass).
+- Default: **off** for every job. Turn it on only when the client
+  permits third-party AI.
+- Set at job creation via the **Allow third-party AI** checkbox, or
+  later from the **Third-party AI** panel on the job page. Jobs created
+  through the ingest API take the value sent by the portal, otherwise
+  the client's default, otherwise off.
+- When off: machine translation from DeepL or Google is refused, and
+  **Run QA** runs the rule-based checks only (the Opus pass is skipped).
+- Every change to the switch, and every call that does send content to
+  an outside provider, is written to the audit log.
 
 ### Job class — production vs test
 
