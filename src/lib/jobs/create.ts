@@ -43,6 +43,8 @@ export interface CreateJobInput {
    * the client's default applies, and a job with no client gets false.
    */
   third_party_ai_allowed?: boolean;
+  /** Extra job details kept on jobs.meta (document_type, order_number). */
+  meta?: Record<string, unknown>;
 }
 
 export interface CreateJobResult {
@@ -228,6 +230,7 @@ export async function createJobFromBuffer(input: CreateJobInput): Promise<Create
     .from("jobs")
     .insert({
       third_party_ai_allowed: thirdPartyAiAllowed,
+      meta: input.meta ?? {},
       reference,
       source: input.source,
       external_ref: input.external_ref ?? null,
