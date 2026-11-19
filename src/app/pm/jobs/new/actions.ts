@@ -23,6 +23,7 @@ import { getOrCreateDefaultTm } from "@/lib/tm/default-tm";
 import { createHash } from "node:crypto";
 import { generateJobReference } from "@/lib/jobs/reference";
 import { audit } from "@/lib/auth/audit";
+import { extractImageBuffer, saveImagePages, imagePagePaths, type ImageExtraction } from "@/lib/jobs/image-extraction";
 
 const Schema = z.object({
   source_lang: z.string().min(2).max(10),
@@ -82,6 +83,7 @@ export async function createJobFromUploadAction(formData: FormData): Promise<voi
   let preTargets: Map<number, { text: string; status: "draft" | "translated" }> | null = null;
   let segmentTags: Map<number, unknown[]> | null = null;
   let segmentLocations: Map<number, unknown> | null = null;
+  let imageExtraction: ImageExtraction | null = null;
   let actualSourceLang = source_lang;
   let actualTargetLang = target_lang;
   if (format === "xliff" || format === "sdlxliff" || format === "sdlppx") {
@@ -131,6 +133,20 @@ export async function createJobFromUploadAction(formData: FormData): Promise<voi
       }
       if (u.source_tags && u.source_tags.length > 0) segmentTags!.set(seq, u.source_tags as unknown[]);
     });
+  } else if (format === "image") {
+    // Image / scanned PDF path: OCR on the self-hosted Cethos service, one
+    // segment per text region, position kept in meta.location.
+    try {
+      imageExtraction = await extractImageBuffer(buffer);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "OCR failed";
+      redirect(`/pm/jobs/new?error=${encodeURIComponent(msg)}`);
+    }
+    if (!imageExtraction || imageExtraction.segments.length === 0) {
+      redirect(`/pm/jobs/new?error=${encodeURIComponent("No readable text was found in the image.")}`);
+    }
+    segments = imageExtraction!.segments;
+    segmentLocations = new Map(imageExtraction!.locations);
   } else if (format === "docx" || format === "html") {
     // Tag-preserving path. Each paragraph (including table cells, list
     // items, headings) becomes one segment carrying its inline-tag inventory.
@@ -331,6 +347,17 @@ export async function createJobFromUploadAction(formData: FormData): Promise<voi
   }
   await service.from("jobs").update({ source_storage_path: storagePath }).eq("id", jobId);
 
+  if (imageExtraction) {
+    try {
+      await saveImagePages(service, jobId, imageExtraction);
+    } catch (e) {
+      await service.storage.from(STORAGE_BUCKET).remove([storagePath, ...imagePagePaths(jobId, imageExtraction)]);
+      await service.from("jobs").delete().eq("id", jobId);
+      const msg = e instanceof Error ? e.message : "Could not store page images";
+      redirect(`/pm/jobs/new?error=${encodeURIComponent(msg)}`);
+    }
+  }
+
   // 3) Bulk insert segments. For XLIFF, also populate pre-existing target text.
   //    For docx/xlsx/pptx/json, attach tag inventory + location into meta so
   //    the round-trip exporters can find the matching slot.
@@ -359,7 +386,9 @@ export async function createJobFromUploadAction(formData: FormData): Promise<voi
     const { error: segErr } = await service.from("segments").insert(slice);
     if (segErr) {
       await service.from("segments").delete().eq("job_id", jobId);
-      await service.storage.from(STORAGE_BUCKET).remove([storagePath]);
+      await service.storage
+        .from(STORAGE_BUCKET)
+        .remove([storagePath, ...(imageExtraction ? imagePagePaths(jobId, imageExtraction) : [])]);
       await service.from("jobs").delete().eq("id", jobId);
       redirect(`/pm/jobs/new?error=${encodeURIComponent(`Segmentation insert failed: ${segErr.message}`)}`);
     }

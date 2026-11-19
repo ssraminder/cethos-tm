@@ -10,7 +10,7 @@ import {
   type OoxmlParagraphSegment,
 } from "./ooxml-tags";
 
-export type SupportedFormat = "txt" | "md" | "html" | "docx" | "xlsx" | "pptx" | "json" | "xliff" | "sdlxliff" | "sdlppx" | "unknown";
+export type SupportedFormat = "txt" | "md" | "html" | "docx" | "xlsx" | "pptx" | "json" | "xliff" | "sdlxliff" | "sdlppx" | "image" | "unknown";
 
 const MIME_BY_EXT: Record<string, string> = {
   ".sdlxliff": "application/x-xliff+xml",
@@ -26,6 +26,10 @@ const MIME_BY_EXT: Record<string, string> = {
   ".md": "text/plain",
   ".html": "text/html",
   ".htm": "text/html",
+  ".pdf": "application/pdf",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
 };
 
 export function resolveContentType(filename: string, browserMime?: string): string {
@@ -50,11 +54,14 @@ export function detectFormat(filename: string, mimeType: string | undefined): Su
   if (lower.endsWith(".sdlxliff")) return "sdlxliff";
   if (lower.endsWith(".xliff") || lower.endsWith(".xlf")) return "xliff";
   if (lower.endsWith(".sdlppx") || lower.endsWith(".sdlrpx")) return "sdlppx";
+  // Scanned documents and photos go through OCR (lib/jobs/image-extraction.ts).
+  if (lower.endsWith(".pdf") || lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".png")) return "image";
   if (mimeType?.includes("wordprocessingml")) return "docx";
   if (mimeType?.includes("spreadsheetml")) return "xlsx";
   if (mimeType?.includes("presentationml")) return "pptx";
   if (mimeType === "text/plain") return "txt";
   if (mimeType === "text/html") return "html";
+  if (mimeType === "application/pdf" || mimeType === "image/jpeg" || mimeType === "image/png") return "image";
   return "unknown";
 }
 
@@ -109,6 +116,9 @@ export async function extractText(buffer: Buffer, format: SupportedFormat): Prom
 
     case "sdlppx":
       throw new Error("SDL packages should be ingested via parseSdlPackage(), not extractText().");
+
+    case "image":
+      throw new Error("Images and PDFs should be ingested via extractImageBuffer(), not extractText().");
 
     case "unknown":
     default:

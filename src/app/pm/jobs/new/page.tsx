@@ -106,10 +106,10 @@ export default async function NewJobPage({
               type="file"
               name="file"
               required
-              accept=".txt,.md,.html,.htm,.docx,.json,.xliff,.xlf,.sdlxliff,.sdlppx,.sdlrpx,text/plain,text/html,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/json"
+              accept=".txt,.md,.html,.htm,.docx,.json,.xliff,.xlf,.sdlxliff,.sdlppx,.sdlrpx,.pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png,text/plain,text/html,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/json"
               className="block w-full text-sm rounded-md border border-[color:var(--color-slate-200)] file:mr-3 file:py-2 file:px-3 file:rounded-md file:border-0 file:bg-[color:var(--color-navy)] file:text-white file:text-xs file:font-semibold hover:file:bg-[color:var(--color-navy-700)]"
             />
-            <p className="text-xs text-[color:var(--color-slate-500)] mt-1">Supported: .txt, .md, .html, .docx, .json, .xliff/.xlf, .sdlxliff, .sdlppx/.sdlrpx. Max 50 MB.</p>
+            <p className="text-xs text-[color:var(--color-slate-500)] mt-1">Supported: .txt, .md, .html, .docx, .json, .xliff/.xlf, .sdlxliff, .sdlppx/.sdlrpx, and scanned documents as .pdf, .jpg or .png (read by the Cethos OCR service, up to 20 pages). Max 50 MB.</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
