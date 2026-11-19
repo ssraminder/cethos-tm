@@ -6,7 +6,8 @@ import { getServiceClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { findMatchesForSegment, type TmMatch } from "@/lib/tm/match";
 import { upsertTmUnit } from "@/lib/tm/default-tm";
-import { translate, type MtSuggestion } from "@/lib/mt";
+import { translate, getDefaultEngine, isThirdPartyEngine, type MtSuggestion } from "@/lib/mt";
+import { isThirdPartyAiAllowed, auditThirdPartyAiCall, THIRD_PARTY_AI_OFF_MESSAGE } from "@/lib/ai-policy";
 
 const SaveSchema = z.object({
   segment_id: z.string().uuid(),
@@ -175,12 +176,31 @@ export async function getMtAction(input: { segment_id: string }): Promise<MtResu
   const ok = job.assigned_to === me.id || job.reviewer_id === me.id || me.role === "admin" || me.role === "pm";
   if (!ok) return { ok: false, error: "Forbidden" };
 
-  try {
-    const suggestion = await translate({
-      source_text: seg.source_text,
-      source_lang: job.source_lang,
-      target_lang: job.target_lang,
+  // Outside MT providers only run when the job's third-party AI switch is on.
+  const engine = getDefaultEngine();
+  if (isThirdPartyEngine(engine)) {
+    if (!(await isThirdPartyAiAllowed(seg.job_id))) {
+      return { ok: false, error: THIRD_PARTY_AI_OFF_MESSAGE };
+    }
+    await auditThirdPartyAiCall({
+      jobId: seg.job_id,
+      provider: engine,
+      purpose: "machine_translation",
+      actorId: me.id,
+      actorEmail: me.email,
+      meta: { segment_id: seg.id },
     });
+  }
+
+  try {
+    const suggestion = await translate(
+      {
+        source_text: seg.source_text,
+        source_lang: job.source_lang,
+        target_lang: job.target_lang,
+      },
+      engine,
+    );
     // Persist on segment so the editor can show "MT used X%" and analytics can compute MT usage.
     await supabase.from("segments").update({
       mt_engine: suggestion.engine,

@@ -26,6 +26,14 @@ export function getDefaultEngine(): MtEngineKind {
   return "mock";
 }
 
+/**
+ * Engines that send the source text to an outside provider. These may only
+ * run when the job's third-party AI switch is on (see lib/ai-policy.ts).
+ */
+export function isThirdPartyEngine(engine: MtEngineKind): engine is "deepl" | "google" {
+  return engine === "deepl" || engine === "google";
+}
+
 export async function translate(req: MtRequest, engine?: MtEngineKind): Promise<MtSuggestion> {
   const choice = engine ?? getDefaultEngine();
   switch (choice) {

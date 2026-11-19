@@ -3,7 +3,7 @@ import Link from "next/link";
 import { PageHeader, KpiCard } from "@/components/AppShell";
 import { getServiceClient } from "@/lib/supabase/server";
 import { requireRole } from "@/lib/auth/current-user";
-import { assignJobAction } from "./actions";
+import { assignJobAction, setThirdPartyAiAction } from "./actions";
 import { runQaAction } from "./qa-actions";
 import { startReviewAction, approveJobAction, requestRevisionAction } from "./review-actions";
 import { attachTmToJobAction, detachTmFromJobAction } from "@/app/admin/tm/actions";
@@ -159,6 +159,26 @@ export default async function JobDetail({
           {decodeURIComponent(sp.error)}
         </div>
       )}
+
+      <div className="mb-6 bg-white rounded-xl border border-[color:var(--color-border)] p-4 shadow-[var(--shadow-soft)] flex items-center justify-between gap-4">
+        <div>
+          <div className="text-sm font-bold text-[color:var(--color-navy)]">
+            Third-party AI: {job.third_party_ai_allowed ? "allowed" : "off"}
+          </div>
+          <div className="text-xs text-[color:var(--color-slate-500)] mt-1">
+            {job.third_party_ai_allowed
+              ? "This job's text may be sent to DeepL or Google for machine translation and to Claude for the QA pass."
+              : "This job's text is not sent to outside AI providers. Machine translation from DeepL or Google and the Claude QA pass are blocked; rule-based QA still runs."}
+          </div>
+        </div>
+        <form action={setThirdPartyAiAction}>
+          <input type="hidden" name="job_id" value={job.id} />
+          <input type="hidden" name="allowed" value={job.third_party_ai_allowed ? "0" : "1"} />
+          <button type="submit" className="whitespace-nowrap px-3 py-2 text-sm font-semibold rounded-md border border-[color:var(--color-slate-200)] bg-white">
+            {job.third_party_ai_allowed ? "Turn off" : "Allow for this job"}
+          </button>
+        </form>
+      </div>
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
         <KpiCard label="Status" value={job.status.replace("_", " ")} />

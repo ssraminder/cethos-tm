@@ -16,6 +16,7 @@ import { parseSdlXliff } from "@/lib/xliff/sdlxliff";
 import { parseSdlPackage } from "@/lib/xliff/sdl-package";
 import { generateJobReference } from "@/lib/jobs/reference";
 import { getOrCreateDefaultTm } from "@/lib/tm/default-tm";
+import { defaultThirdPartyAiForClient } from "@/lib/ai-policy";
 
 const STORAGE_BUCKET = "cat-source-files";
 
@@ -36,6 +37,11 @@ export interface CreateJobInput {
   qa_profile_id?: string | null;
   tm_ids?: string[];
   termbase_ids?: string[];
+  /**
+   * May this job's content be sent to third-party AI providers? When omitted
+   * the client's default applies, and a job with no client gets false.
+   */
+  third_party_ai_allowed?: boolean;
 }
 
 export interface CreateJobResult {
@@ -205,10 +211,14 @@ export async function createJobFromBuffer(input: CreateJobInput): Promise<Create
   const wordTotal = totalWords(segments);
   const reference = (input.reference && input.reference.trim()) || generateJobReference();
 
+  const thirdPartyAiAllowed =
+    input.third_party_ai_allowed ?? (await defaultThirdPartyAiForClient(input.client_id));
+
   const supabase = await getServiceClient();
   const { data: job, error: jobErr } = await supabase
     .from("jobs")
     .insert({
+      third_party_ai_allowed: thirdPartyAiAllowed,
       reference,
       source: input.source,
       external_ref: input.external_ref ?? null,

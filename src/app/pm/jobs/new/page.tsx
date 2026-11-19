@@ -168,9 +168,26 @@ export default async function NewJobPage({
                 className="mt-0.5"
               />
               <div>
-                <span className="text-sm font-semibold text-[color:var(--color-navy)]">Enable AI QA review</span>
+                <span className="text-sm font-semibold text-[color:var(--color-navy)]">Enable QA review</span>
                 <p className="text-xs text-[color:var(--color-slate-500)]">
-                  When checked, the translator can run an Opus-powered QA pass before delivery (rule-based + LLM checks). Uncheck for jobs that should ship without AI review.
+                  When checked, the translator can run QA before delivery. Rule-based checks always run; the Claude Opus pass runs only if third-party AI is allowed below.
+                </p>
+              </div>
+            </label>
+          </div>
+
+          <div>
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                name="third_party_ai_allowed"
+                value="1"
+                className="mt-0.5"
+              />
+              <div>
+                <span className="text-sm font-semibold text-[color:var(--color-navy)]">Allow third-party AI</span>
+                <p className="text-xs text-[color:var(--color-slate-500)]">
+                  Off by default. When checked, this job&apos;s text may be sent to outside AI providers: DeepL or Google for machine translation, and Claude for the QA pass. Leave unchecked unless the client permits it.
                 </p>
               </div>
             </label>

@@ -22,6 +22,9 @@ const ContentSchema = z.object({
   deadline: z.string().optional(),
   tm_ids: z.array(z.string().uuid()).optional(),
   termbase_ids: z.array(z.string().uuid()).optional(),
+  // May this job's content go to third-party AI (DeepL, Google, Claude)?
+  // Omit to use the client's default; with no client that is false.
+  third_party_ai_allowed: z.boolean().optional(),
 });
 
 function bearer(req: NextRequest): string | null {
@@ -49,6 +52,7 @@ function bearer(req: NextRequest): string | null {
  *   "qa_profile_id": "uuid",                        // optional, defaults to default profile
  *   "tm_ids": ["uuid", ...],                        // optional
  *   "termbase_ids": ["uuid", ...],                  // optional
+ *   "third_party_ai_allowed": false,                // optional, default = client's setting, else false
  *   "deadline": "2026-05-01T17:00:00Z"              // optional ISO-8601
  * }
  *
@@ -144,6 +148,7 @@ export async function POST(req: NextRequest) {
       qa_profile_id: p.qa_profile_id,
       tm_ids: p.tm_ids,
       termbase_ids: p.termbase_ids,
+      third_party_ai_allowed: p.third_party_ai_allowed,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Ingest failed";
