@@ -502,3 +502,31 @@ without disabling Run QA. Deterministic still runs.
 
 - **Admin guide** for client setup, TM/termbase administration, user invites
 - **Translator guide** for the editor's keyboard shortcuts and TM panel
+
+## Image jobs (scanned documents and ID cards)
+
+- Upload a `.pdf`, `.jpg` or `.png` on **Create job**. The file is read by
+  the Cethos OCR service, which runs on our own infrastructure. Nothing is
+  sent to an outside provider, whatever the third-party AI switch says.
+- Each line of text found on the page becomes one segment. In the editor
+  the page image sits on the left with a box around every segment; click a
+  box to jump to its row, or a row to see its box.
+- Under the image, the selected field shows what OCR read and how
+  confident it was. Confidence is a guide only: always compare names,
+  dates and numbers with the image.
+- **Correct the source reading** when OCR misread the document. The
+  original reading is kept for the record. **Mark illegible** when the
+  text cannot be read; never guess.
+- Field checks run automatically and appear as **Check** notes:
+  - a letter O and a digit 0 that may be mixed up in a number or code;
+  - a date that is not valid when read as day/month/year;
+  - a source date that does not appear in the translation;
+  - a number or identifier that is not copied exactly.
+- Photographs, seals, signatures and codes are described in square
+  brackets, for example `[Signature of holder]`.
+- **Download certified translation (Word)** on the job page produces the
+  translation page laid out like the original. Until every field is
+  confirmed the document is marked **DRAFT** with open entries in red.
+  The translator's affidavit is still added by the portal.
+- Not supported yet: Punjabi (Gurmukhi) script, handwriting and old
+  typewritten forms. Translate those the usual way.

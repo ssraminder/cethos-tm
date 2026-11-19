@@ -168,6 +168,7 @@ export function SegmentRow({
   targetLangCode,
   sourceRtl,
   targetRtl,
+  selected,
   onActivate,
 }: {
   segment: Segment;
@@ -188,6 +189,8 @@ export function SegmentRow({
   targetLangCode: string;
   sourceRtl: boolean;
   targetRtl: boolean;
+  /** Selected from outside the row (image jobs: the region picked on the page). */
+  selected?: boolean;
   /**
    * Called when this row becomes the focused/active segment (focus or click).
    * The wrapper uses this to drive the right pane's lookup.
@@ -344,7 +347,7 @@ export function SegmentRow({
       data-seg-id={segment.id}
       className={[
         "grid grid-cols-[40px_36px_1fr_1fr] gap-3 px-3 py-3 border-b border-[color:var(--color-border-soft)] transition",
-        active ? "bg-[color:var(--color-bg-blue)]/40" : "bg-white hover:bg-[color:var(--color-slate-50)]",
+        active || selected ? "bg-[color:var(--color-bg-blue)]/40" : "bg-white hover:bg-[color:var(--color-slate-50)]",
         status === "translated" || status === "reviewed" ? "border-l-[3px] border-l-[color:var(--color-emerald-500)]" : "",
       ].join(" ")}
       onFocusCapture={() => {

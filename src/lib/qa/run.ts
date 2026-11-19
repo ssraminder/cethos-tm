@@ -1,6 +1,7 @@
 import { getServiceClient } from "@/lib/supabase/server";
 import { getTermHitsForJob } from "@/lib/termbase/hits";
 import { runRulesForSegments, type QaRule, type SegmentSnapshot, type ForbiddenTermHit } from "./rules";
+import { fieldChecks } from "./field-rules";
 
 export async function runQaForJob(jobId: string): Promise<{ inserted: number; findings_by_severity: Record<string, number>; rules_run: number }> {
   const supabase = await getServiceClient();
@@ -21,10 +22,17 @@ export async function runQaForJob(jobId: string): Promise<{ inserted: number; fi
 
   // Load segments + termbase hits in parallel.
   const [segsRes, termHits] = await Promise.all([
-    supabase.from("segments").select("id, source_text, target_text, status").eq("job_id", jobId),
+    supabase.from("segments").select("id, source_text, target_text, status, meta").eq("job_id", jobId),
     getTermHitsForJob(jobId),
   ]);
   const segments: SegmentSnapshot[] = (segsRes.data ?? []) as SegmentSnapshot[];
+  // Segments read from a page image (ID documents) also get the field checks:
+  // dates, identifiers copied exactly, and letter-O / digit-0 confusion.
+  const imageSegmentIds = new Set(
+    ((segsRes.data ?? []) as Array<{ id: string; meta: { location?: { kind?: string } } | null }>)
+      .filter((s) => s.meta?.location?.kind === "image_region")
+      .map((s) => s.id),
+  );
 
   // Build flat list of forbidden hits across all segments.
   const forbiddenTermHits: ForbiddenTermHit[] = [];
@@ -52,6 +60,12 @@ export async function runQaForJob(jobId: string): Promise<{ inserted: number; fi
   }
 
   const findings = runRulesForSegments(rules, segments, { forbiddenTermHits });
+  for (const seg of segments) {
+    if (!imageSegmentIds.has(seg.id)) continue;
+    for (const c of fieldChecks(seg.source_text, seg.target_text ?? "")) {
+      findings.push({ segment_id: seg.id, rule: `field_${c.rule}`, severity: c.severity, message: c.message });
+    }
+  }
   const findings_by_severity: Record<string, number> = { critical: 0, major: 0, minor: 0 };
   for (const f of findings) findings_by_severity[f.severity] = (findings_by_severity[f.severity] ?? 0) + 1;
 
