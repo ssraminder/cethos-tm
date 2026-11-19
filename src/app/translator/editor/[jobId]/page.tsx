@@ -10,6 +10,8 @@ import { RealtimeJobStatus } from "@/components/RealtimeJobStatus";
 import { DeliverButton } from "./DeliverButton";
 import { QaReviewPanel, type QaReviewFinding } from "./QaReviewPanel";
 import { isRtlCode } from "@/lib/i18n/rtl";
+import type { ImagePageView, ImageRegionView } from "./ImagePane";
+import type { ImageRegionLocation, StoredImagePage } from "@/lib/jobs/image-extraction";
 
 export default async function EditorPage({
   params,
@@ -50,7 +52,7 @@ export default async function EditorPage({
 
   let q = supabase
     .from("segments")
-    .select("id, seq, source_text, target_text, status, word_count, target_origin")
+    .select("id, seq, source_text, target_text, status, word_count, target_origin, meta")
     .eq("job_id", jobId)
     .order("seq", { ascending: true });
 
@@ -89,6 +91,43 @@ export default async function EditorPage({
     arr.push({ rule: f.rule, severity: f.severity, message: f.message });
     findingsBySeg.set(f.segment_id, arr);
   }
+
+  // Image jobs: signed page images plus one region per visible segment, for
+  // the editor's image pane. Signed URLs last an hour; a reload renews them.
+  let imageView: { pages: ImagePageView[]; regions: ImageRegionView[] } | null = null;
+  const storedPages = ((job.meta as { image?: { pages?: StoredImagePage[] } } | null)?.image?.pages ?? []) as StoredImagePage[];
+  if (job.source_format === "image" && storedPages.length > 0) {
+    const { data: signed } = await supabase.storage
+      .from("cat-source-files")
+      .createSignedUrls(storedPages.map((pg) => pg.storage_path), 3600);
+    const urlByPath = new Map<string, string>();
+    for (const s of signed ?? []) if (s.path && s.signedUrl) urlByPath.set(s.path, s.signedUrl);
+    const pages: ImagePageView[] = storedPages
+      .filter((pg) => urlByPath.has(pg.storage_path))
+      .map((pg) => ({ page: pg.page, width: pg.width, height: pg.height, url: urlByPath.get(pg.storage_path)! }));
+    const regions: ImageRegionView[] = [];
+    for (const s of (segments ?? []) as Array<{ id: string; seq: number; source_text: string; meta: { location?: ImageRegionLocation } | null }>) {
+      const loc = s.meta?.location;
+      if (!loc || loc.kind !== "image_region") continue;
+      regions.push({
+        segmentId: s.id,
+        seq: s.seq,
+        page: loc.page,
+        box: loc.box,
+        confidence: loc.confidence,
+        ocrText: loc.ocr_text,
+        sourceText: s.source_text,
+        findings: (findingsBySeg.get(s.id) ?? []).map((f) => ({ severity: f.severity, message: f.message })),
+      });
+    }
+    imageView = { pages, regions };
+  }
+  // Segment meta (tag inventories, locations) stays on the server.
+  const clientSegments = (segments ?? []).map((s) => {
+    const { meta, ...rest } = s as typeof s & { meta?: unknown };
+    void meta;
+    return rest;
+  });
 
   const { data: attachedTms } = await supabase
     .from("job_resources")
@@ -242,7 +281,8 @@ export default async function EditorPage({
           targetLangCode={job.target_lang}
           sourceRtl={isRtlCode(job.source_lang)}
           targetRtl={isRtlCode(job.target_lang)}
-          segments={(segments ?? []) as never}
+          segments={clientSegments as never}
+          image={imageView}
           highlightedSourceById={Object.fromEntries(
             (segments ?? []).map((s) => {
               const hits = termHits.get(s.id) ?? [];

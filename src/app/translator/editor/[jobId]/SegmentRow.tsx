@@ -341,6 +341,7 @@ export function SegmentRow({
 
   return (
     <div
+      data-seg-id={segment.id}
       className={[
         "grid grid-cols-[40px_36px_1fr_1fr] gap-3 px-3 py-3 border-b border-[color:var(--color-border-soft)] transition",
         active ? "bg-[color:var(--color-bg-blue)]/40" : "bg-white hover:bg-[color:var(--color-slate-50)]",
