@@ -121,6 +121,56 @@ export async function markIllegibleAction(input: { segment_id: string }): Promis
   return { ok: true };
 }
 
+const ExcludeSchema = z.object({ segment_id: z.string().uuid(), excluded: z.boolean() });
+const EXCLUDED_TARGET = "[not part of the document]";
+
+/**
+ * Leaves a field out of the translation. The reading service also picks up
+ * background security print and hologram text; those are not part of the
+ * document's content. An excluded field counts as confirmed, is skipped by QA
+ * and is left out of the draft and the certified document. It is not written
+ * to the translation memory.
+ */
+export async function setFieldExcludedAction(input: { segment_id: string; excluded: boolean }): Promise<ImageActionResult> {
+  const me = await getCurrentUser();
+  const parsed = ExcludeSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Invalid input" };
+
+  const loaded = await loadEditableSegment(parsed.data.segment_id, me);
+  if ("error" in loaded) return { ok: false, error: loaded.error ?? "Not allowed" };
+  const { supabase, seg, meta } = loaded;
+
+  const nextMeta: Record<string, unknown> = { ...meta };
+  let update: Record<string, unknown>;
+  if (parsed.data.excluded) {
+    nextMeta.excluded = { by: me.id, at: new Date().toISOString() };
+    update = {
+      target_text: EXCLUDED_TARGET,
+      status: "translated",
+      target_origin: "human",
+      confirmed_by: me.id,
+      confirmed_at: new Date().toISOString(),
+      meta: nextMeta,
+    };
+  } else {
+    delete nextMeta.excluded;
+    update = { target_text: "", status: "untranslated", confirmed_by: null, confirmed_at: null, meta: nextMeta };
+  }
+  const { error } = await supabase.from("segments").update(update).eq("id", seg.id);
+  if (error) return { ok: false, error: error.message };
+
+  await audit({
+    category: "job",
+    action: parsed.data.excluded ? "segment_excluded" : "segment_included",
+    actorId: me.id,
+    actorEmail: me.email,
+    targetType: "job",
+    targetId: seg.job_id,
+    meta: { segment_id: seg.id, seq: seg.seq },
+  });
+  return { ok: true };
+}
+
 const CommentsSchema = z.object({
   job_id: z.string().uuid(),
   comments: z.string().max(4000),

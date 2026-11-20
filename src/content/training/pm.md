@@ -524,9 +524,17 @@ without disabling Run QA. Deterministic still runs.
   - a number or identifier that is not copied exactly.
 - Photographs, seals, signatures and codes are described in square
   brackets, for example `[Signature of holder]`.
-- **Download certified translation (Word)** on the job page produces the
-  translation page laid out like the original. Until every field is
-  confirmed the document is marked **DRAFT** with open entries in red.
-  The translator's affidavit is still added by the portal.
+- Background security print and hologram text are read as fields too.
+  **Not part of the document** leaves such a field out: it counts as
+  confirmed, QA skips it, and it does not appear in the draft or in the
+  certified document. The PM sees it listed on the comments page.
+- On these jobs QA does not raise "target identical to source", the
+  length check or the general number check: dates, names and numbers are
+  meant to be copied, and the field checks above cover them.
+- **Download working draft (Word)** on the job page produces a working
+  draft laid out like the original. It is not the certified translation.
+  The certified document (affidavit, translation, original scan) is built
+  by the portal when the customer approves the draft; the portal fetches
+  the draft from this job itself.
 - Not supported yet: Punjabi (Gurmukhi) script, handwriting and old
   typewritten forms. Translate those the usual way.

@@ -26,9 +26,10 @@ export async function exportCertifiedTranslation(jobId: string): Promise<{ buffe
     .order("seq", { ascending: true });
 
   const fields: CertifiedField[] = [];
-  for (const s of (segs ?? []) as Array<{ seq: number; target_text: string | null; status: string; meta: { location?: ImageRegionLocation } | null }>) {
+  for (const s of (segs ?? []) as Array<{ seq: number; target_text: string | null; status: string; meta: { location?: ImageRegionLocation; excluded?: unknown } | null }>) {
     const loc = s.meta?.location;
     if (!loc || loc.kind !== "image_region") continue;
+    if (s.meta?.excluded) continue;
     fields.push({
       seq: s.seq,
       target: s.target_text ?? "",
@@ -65,5 +66,5 @@ export async function exportCertifiedTranslation(jobId: string): Promise<{ buffe
     fields,
   });
   const safeRef = String(job.reference).replace(/[^A-Za-z0-9._-]+/g, "_");
-  return { buffer, filename: `${safeRef}_certified_translation.docx` };
+  return { buffer, filename: `${safeRef}_working_draft.docx` };
 }

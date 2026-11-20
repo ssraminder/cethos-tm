@@ -49,10 +49,14 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ jobId: stri
     source_text: string;
     target_text: string | null;
     status: string;
-    meta: { location?: ImageRegionLocation; illegible?: unknown; source_corrected?: unknown } | null;
+    meta: { location?: ImageRegionLocation; illegible?: unknown; source_corrected?: unknown; excluded?: unknown } | null;
   }>) {
     const loc = s.meta?.location;
     if (!loc || loc.kind !== "image_region") continue;
+    if (s.meta?.excluded) {
+      auto.push(`Field ${s.seq}: left out as not part of the document (read as "${s.source_text}").`);
+      continue;
+    }
     fields.push({
       seq: s.seq,
       page: loc.page,

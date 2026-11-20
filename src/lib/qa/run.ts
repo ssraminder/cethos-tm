@@ -59,9 +59,21 @@ export async function runQaForJob(jobId: string): Promise<{ inserted: number; fi
       .eq("ignored", false);
   }
 
-  const findings = runRulesForSegments(rules, segments, { forbiddenTermHits });
+  // On a scanned document a date, a name or a number is rightly identical to
+  // the source, a field label added in English changes the length, and the
+  // field checks below compare numbers and identifiers properly. So these
+  // three general rules are not applied to fields read from an image.
+  const SKIP_ON_IMAGE = new Set(["identical_source_target", "length_ratio", "number_mismatch"]);
+  const excludedIds = new Set(
+    ((segsRes.data ?? []) as Array<{ id: string; meta: { excluded?: unknown } | null }>)
+      .filter((s) => s.meta?.excluded)
+      .map((s) => s.id),
+  );
+  const findings = runRulesForSegments(rules, segments, { forbiddenTermHits }).filter(
+    (f) => !excludedIds.has(f.segment_id) && !(imageSegmentIds.has(f.segment_id) && SKIP_ON_IMAGE.has(f.rule)),
+  );
   for (const seg of segments) {
-    if (!imageSegmentIds.has(seg.id)) continue;
+    if (!imageSegmentIds.has(seg.id) || excludedIds.has(seg.id)) continue;
     for (const c of fieldChecks(seg.source_text, seg.target_text ?? "")) {
       findings.push({ segment_id: seg.id, rule: `field_${c.rule}`, severity: c.severity, message: c.message });
     }

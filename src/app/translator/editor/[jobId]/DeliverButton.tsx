@@ -24,6 +24,7 @@ export function DeliverButton({
   enabled,
   totalSegments,
   inQaRunning,
+  thirdPartyAi,
 }: {
   jobId: string;
   jobClass: "production" | "test";
@@ -31,6 +32,8 @@ export function DeliverButton({
   enabled: boolean;
   totalSegments: number;
   inQaRunning: boolean;
+  /** False when the job keeps its text away from outside AI providers. */
+  thirdPartyAi: boolean;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -81,7 +84,7 @@ export function DeliverButton({
             onClick={() => setModal({ kind: "confirm-qa" })}
             disabled={isPending}
             className="px-3 py-1.5 text-xs font-semibold rounded border border-[color:var(--color-slate-200)] bg-white text-[color:var(--color-slate-700)] hover:bg-[color:var(--color-slate-50)] disabled:opacity-50"
-            title="Run rule-based + AI QA review before delivery"
+            title={thirdPartyAi ? "Run rule-based + AI QA review before delivery" : "Run the rule-based QA checks before delivery"}
           >
             {isPending ? "Working…" : "Run QA"}
           </button>
@@ -98,8 +101,12 @@ export function DeliverButton({
 
       {modal.kind === "confirm-qa" && (
         <ConfirmModal
-          title={`Run AI QA on ${totalSegments} segment${totalSegments === 1 ? "" : "s"}?`}
-          body="We'll run deterministic checks first, then send your translations to Opus for an AI review. You'll see findings in a review panel — accept, edit, or reject each one before delivery."
+          title={`Run ${thirdPartyAi ? "AI QA" : "QA checks"} on ${totalSegments} segment${totalSegments === 1 ? "" : "s"}?`}
+          body={
+            thirdPartyAi
+              ? "We'll run deterministic checks first, then send your translations to Opus for an AI review. You'll see findings in a review panel — accept, edit, or reject each one before delivery."
+              : "Third-party AI is off for this job, so nothing is sent to an outside AI provider. Only the built-in rule checks run. You'll see findings in a review panel — fix or reject each one before delivery."
+          }
           confirmLabel="Run QA"
           onConfirm={runQa}
           onCancel={() => setModal({ kind: "none" })}

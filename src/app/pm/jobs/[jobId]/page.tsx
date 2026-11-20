@@ -123,7 +123,7 @@ export default async function JobDetail({
             <a href={`/pm/jobs/${job.id}/export?format=xliff`} className="px-3 py-2 text-sm font-semibold rounded-md border border-[color:var(--color-slate-200)] bg-white">Download XLIFF</a>
             <a href={`/pm/jobs/${job.id}/export?format=txt`} className="px-3 py-2 text-sm font-semibold rounded-md border border-[color:var(--color-slate-200)] bg-white">Download TXT</a>
             {job.source_format === "image" && (
-              <a href={`/api/jobs/${job.id}/export-certified`} className="px-3 py-2 text-sm font-semibold rounded-md border border-[color:var(--color-slate-200)] bg-white">Download certified translation (Word)</a>
+              <a href={`/api/jobs/${job.id}/export-certified`} className="px-3 py-2 text-sm font-semibold rounded-md border border-[color:var(--color-slate-200)] bg-white">Download working draft (Word)</a>
             )}
             {job.source_format === "docx" && (
               <a href={`/api/jobs/${job.id}/export-docx`} className="px-3 py-2 text-sm font-semibold rounded-md border border-[color:var(--color-slate-200)] bg-white">Download Word</a>
