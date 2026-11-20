@@ -48,6 +48,13 @@ check("identifier copied exactly passes", rules(targetChecks("NUMERO: 000 319 08
 check("identifier with a changed digit is flagged", rules(targetChecks("NUMERO: 000 319 084", "Number: 000 319 034")), ["identifier_changed"]);
 check("identifier dropped is flagged", rules(targetChecks("IDENTIFICADOR DE CONDUCTOR UA093FXYQ", "Driver ID")), ["identifier_changed"]);
 check("two-digit year matches four-digit target", rules(targetChecks("28/11/23", "28 November 2023")), []);
+check("house format passes for an English target", rules(targetChecks("3. 12.08.64", "3. August 12, 1964", { targetLang: "en" })), []);
+check("numeric date in an English target is flagged for format", rules(targetChecks("3. 12.08.64", "3. 12.08.64", { targetLang: "en" })), ["date_format"]);
+check("day-first words in an English target are flagged for format", rules(targetChecks("FECHA 14/02/1990", "14 February 1990", { targetLang: "en-CA" })), ["date_format"]);
+check("format is not enforced for another target language", rules(targetChecks("3. 12.08.64", "3. 12.08.64", { targetLang: "fr" })), []);
+check("format is not enforced when the language is unknown", rules(targetChecks("3. 12.08.64", "3. 12.08.64")), []);
+check("a comma after the month is still read as the date", rules(targetChecks("3. 12.08.64", "3. August, 12, 1964")), []);
+check("wrong date in house format is a mismatch, not a format note", rules(targetChecks("3. 12.08.64", "3. August 12, 1946", { targetLang: "en" })), ["date_mismatch"]);
 check("text field has no checks", rules(fieldChecks("ESTADO DE VERACRUZ", "STATE OF VERACRUZ")), []);
 
 console.log(failed === 0 ? "\nAll field-rule checks passed." : `\n${failed} check(s) FAILED.`);

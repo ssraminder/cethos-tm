@@ -12,7 +12,7 @@ import { QaReviewPanel, type QaReviewFinding } from "./QaReviewPanel";
 import { isRtlCode } from "@/lib/i18n/rtl";
 import type { ImagePageView, ImageRegionView } from "./ImagePane";
 import type { ImageRegionLocation, StoredImagePage } from "@/lib/jobs/image-extraction";
-import { fieldChecks, fieldKind } from "@/lib/qa/field-rules";
+import { fieldChecks, fieldKind, houseDates } from "@/lib/qa/field-rules";
 
 export default async function EditorPage({
   params,
@@ -114,7 +114,7 @@ export default async function EditorPage({
       // Field checks are recomputed on every load from the current text, so
       // they replace any stored copies from an earlier QA run (rule "field_*").
       // A field left out of the document has nothing to check.
-      const live = (excluded ? [] : fieldChecks(s.source_text, s.target_text ?? "")).map((c) => ({ rule: `field_${c.rule}`, severity: c.severity, message: c.message }));
+      const live = (excluded ? [] : fieldChecks(s.source_text, s.target_text ?? "", { targetLang: job.target_lang })).map((c) => ({ rule: `field_${c.rule}`, severity: c.severity, message: c.message }));
       const stored = excluded ? [] : (findingsBySeg.get(s.id) ?? []).filter((f) => !f.rule.startsWith("field_"));
       findingsBySeg.set(s.id, [...live, ...stored]);
       regions.push({
@@ -126,6 +126,7 @@ export default async function EditorPage({
         ocrText: loc.ocr_text,
         sourceText: s.source_text,
         kind: fieldKind(s.source_text),
+        houseDates: (job.target_lang ?? "").toLowerCase().startsWith("en") ? houseDates(s.source_text) : [],
         excluded,
         findings: (findingsBySeg.get(s.id) ?? []).map((f) => ({ severity: f.severity, message: f.message })),
       });

@@ -522,6 +522,12 @@ without disabling Run QA. Deterministic still runs.
   - a date that is not valid when read as day/month/year;
   - a source date that does not appear in the translation;
   - a number or identifier that is not copied exactly.
+  - a date that is not written in the certified format (English targets):
+    month in words, day, four-digit year, for example `August 12, 1964`.
+    The field card shows the date already written that way.
+- The translation is verbatim. Nothing is added that is not printed on the
+  document: if a licence shows only `3.` before a date, the translation
+  shows `3.` and the date, not "Date of birth".
 - Photographs, seals, signatures and codes are described in square
   brackets, for example `[Signature of holder]`.
 - Background security print and hologram text are read as fields too.

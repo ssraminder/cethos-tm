@@ -29,6 +29,8 @@ export interface ImageRegionView {
   ocrText: string;
   /** Current source text (differs from ocrText once a human corrects it). */
   sourceText: string;
+  /** Dates of the field written the way certified translations write them. */
+  houseDates?: string[];
   /** Left out of the translation: background print, holograms and the like. */
   excluded?: boolean;
   findings: Array<{ severity: string; message: string }>;
@@ -255,6 +257,12 @@ export function ImagePane({
                 <span className="font-bold">Check:</span> {f.message}
               </div>
             ))}
+            {(active.houseDates?.length ?? 0) > 0 && !active.excluded && (
+              <div className="text-xs text-[color:var(--color-slate-700)]">
+                <span className="font-semibold text-[color:var(--color-navy)]">Write the date as:</span>{" "}
+                <span className="mono">{active.houseDates!.join("  ·  ")}</span>
+              </div>
+            )}
             {active.excluded && (
               <div className="text-xs text-[color:var(--color-slate-600)] bg-[color:var(--color-slate-100)] rounded px-2 py-1.5">
                 Left out: this field is not part of the document and will not appear in the translation.
