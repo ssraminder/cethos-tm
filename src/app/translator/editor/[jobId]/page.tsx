@@ -107,13 +107,15 @@ export default async function EditorPage({
       .filter((pg) => urlByPath.has(pg.storage_path))
       .map((pg) => ({ page: pg.page, width: pg.width, height: pg.height, url: urlByPath.get(pg.storage_path)! }));
     const regions: ImageRegionView[] = [];
-    for (const s of (segments ?? []) as Array<{ id: string; seq: number; source_text: string; target_text: string; meta: { location?: ImageRegionLocation } | null }>) {
+    for (const s of (segments ?? []) as Array<{ id: string; seq: number; source_text: string; target_text: string; meta: { location?: ImageRegionLocation; excluded?: unknown } | null }>) {
       const loc = s.meta?.location;
       if (!loc || loc.kind !== "image_region") continue;
+      const excluded = Boolean(s.meta?.excluded);
       // Field checks are recomputed on every load from the current text, so
       // they replace any stored copies from an earlier QA run (rule "field_*").
-      const live = fieldChecks(s.source_text, s.target_text ?? "").map((c) => ({ rule: `field_${c.rule}`, severity: c.severity, message: c.message }));
-      const stored = (findingsBySeg.get(s.id) ?? []).filter((f) => !f.rule.startsWith("field_"));
+      // A field left out of the document has nothing to check.
+      const live = (excluded ? [] : fieldChecks(s.source_text, s.target_text ?? "")).map((c) => ({ rule: `field_${c.rule}`, severity: c.severity, message: c.message }));
+      const stored = excluded ? [] : (findingsBySeg.get(s.id) ?? []).filter((f) => !f.rule.startsWith("field_"));
       findingsBySeg.set(s.id, [...live, ...stored]);
       regions.push({
         segmentId: s.id,
@@ -124,6 +126,7 @@ export default async function EditorPage({
         ocrText: loc.ocr_text,
         sourceText: s.source_text,
         kind: fieldKind(s.source_text),
+        excluded,
         findings: (findingsBySeg.get(s.id) ?? []).map((f) => ({ severity: f.severity, message: f.message })),
       });
     }
@@ -241,6 +244,7 @@ export default async function EditorPage({
             enabled={deliverEnabled}
             totalSegments={counts.total}
             inQaRunning={inQaRunning}
+            thirdPartyAi={(job as { third_party_ai_allowed?: boolean }).third_party_ai_allowed === true}
           />
         </div>
       </header>

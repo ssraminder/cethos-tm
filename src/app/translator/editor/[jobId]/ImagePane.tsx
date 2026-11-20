@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { correctSourceAction, markIllegibleAction, saveTranslatorCommentsAction } from "./image-actions";
+import { correctSourceAction, markIllegibleAction, setFieldExcludedAction, saveTranslatorCommentsAction } from "./image-actions";
 
 /**
  * Left pane of the editor for image jobs (scanned PDFs, photos of ID
@@ -29,6 +29,8 @@ export interface ImageRegionView {
   ocrText: string;
   /** Current source text (differs from ocrText once a human corrects it). */
   sourceText: string;
+  /** Left out of the translation: background print, holograms and the like. */
+  excluded?: boolean;
   findings: Array<{ severity: string; message: string }>;
   /** What the field looks like: a date, a number or identifier, or plain text. */
   kind: "date" | "number" | "text";
@@ -253,6 +255,11 @@ export function ImagePane({
                 <span className="font-bold">Check:</span> {f.message}
               </div>
             ))}
+            {active.excluded && (
+              <div className="text-xs text-[color:var(--color-slate-600)] bg-[color:var(--color-slate-100)] rounded px-2 py-1.5">
+                Left out: this field is not part of the document and will not appear in the translation.
+              </div>
+            )}
             {!readOnly && !correcting && (
               <div className="flex flex-wrap gap-2 pt-1">
                 <button
@@ -272,6 +279,15 @@ export function ImagePane({
                   className="px-3 py-2 text-xs font-semibold rounded-md border border-[color:var(--color-slate-200)] bg-white text-[color:var(--color-navy)] disabled:opacity-50"
                 >
                   Mark illegible
+                </button>
+                <button
+                  type="button"
+                  disabled={isPending}
+                  onClick={() => run(() => setFieldExcludedAction({ segment_id: active.segmentId, excluded: !active.excluded }))}
+                  title="Background security print, hologram text or anything else that is not part of the document's content. The field is left out of the translation."
+                  className="px-3 py-2 text-xs font-semibold rounded-md border border-[color:var(--color-slate-200)] bg-white text-[color:var(--color-navy)] disabled:opacity-50"
+                >
+                  {active.excluded ? "Include in the document again" : "Not part of the document"}
                 </button>
               </div>
             )}

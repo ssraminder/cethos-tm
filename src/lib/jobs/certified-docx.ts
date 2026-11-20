@@ -138,7 +138,7 @@ function headerBand(): Table {
             children: [
               new Paragraph({
                 alignment: AlignmentType.RIGHT,
-                children: [new TextRun({ text: "CERTIFIED TRANSLATION", font: FONT, size: 17, bold: true, color: "D1D5DB", characterSpacing: 30 })],
+                children: [new TextRun({ text: "DRAFT TRANSLATION", font: FONT, size: 17, bold: true, color: "D1D5DB", characterSpacing: 30 })],
               }),
             ],
           }),
@@ -279,7 +279,7 @@ export async function buildCertifiedDocx(d: CertifiedData): Promise<Buffer> {
           run(d.reviser ?? "[REVISER NAME]", { size: 17 }),
         ],
       }),
-      new Paragraph({ children: [run("The translator's affidavit is attached to this translation.", { size: 17 })] }),
+      new Paragraph({ children: [run("Working draft for review. The certified translation is issued by Cethos through the portal.", { size: 17 })] }),
       new Paragraph({
         children: [
           run("Cethos · 421 7 Ave SW, Floor 30, Calgary AB, Canada · Page ", { size: 17 }),
