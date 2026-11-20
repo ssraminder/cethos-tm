@@ -13,7 +13,7 @@
 export type FieldKind = "date" | "number" | "text";
 
 export interface FieldCheck {
-  rule: "ocr_letter_digit" | "date_invalid" | "date_mismatch" | "identifier_changed";
+  rule: "ocr_letter_digit" | "date_invalid" | "date_mismatch" | "date_format" | "identifier_changed";
   severity: "critical" | "major" | "minor";
   message: string;
 }
@@ -29,7 +29,7 @@ const ISO_DATE = /(?<!\d)(\d{4})-(\d{1,2})-(\d{1,2})(?!\d)/g;
 const MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
 const MONTH_ALT = MONTHS.map((m) => `${m}|${m.slice(0, 3)}`).join("|");
 const DAY_MONTH_YEAR = new RegExp(`(?<!\\d)(\\d{1,2})(?:st|nd|rd|th)?\\s+(${MONTH_ALT})\\.?,?\\s+(\\d{4})`, "gi");
-const MONTH_DAY_YEAR = new RegExp(`(${MONTH_ALT})\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(\\d{4})`, "gi");
+const MONTH_DAY_YEAR = new RegExp(`(${MONTH_ALT})\\.?,?\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(\\d{4})`, "gi");
 
 function fullYear(y: string): number {
   const n = Number(y);
@@ -117,8 +117,27 @@ export function letterDigitSuspects(text: string): string[] {
   return [...out];
 }
 
+/**
+ * The date format used on every Cethos certified translation into English:
+ * month in words, day, comma, four-digit year ("August 12, 1964").
+ */
+export function houseDate(d: ParsedDate): string {
+  const month = MONTHS[d.month - 1]?.replace(/^./, (c) => c.toUpperCase()) ?? `month ${d.month}`;
+  return `${month} ${d.day}, ${d.year}`;
+}
+
+/** The valid dates of a source field, each written in the house format. */
+export function houseDates(source: string): string[] {
+  return sourceDates(source).filter(isRealDate).map(houseDate);
+}
+
 function fmt(d: ParsedDate): string {
-  return `${d.day} ${MONTHS[d.month - 1]?.replace(/^./, (c) => c.toUpperCase()) ?? `month ${d.month}`} ${d.year}`;
+  return houseDate(d);
+}
+
+export interface FieldCheckOptions {
+  /** Target language code of the job. The house date format applies to English. */
+  targetLang?: string | null;
 }
 
 /** Checks on what was read from the image. Run whether or not a target exists. */
@@ -144,10 +163,12 @@ export function sourceChecks(source: string): FieldCheck[] {
 }
 
 /** Checks that compare a typed translation with its source. */
-export function targetChecks(source: string, target: string): FieldCheck[] {
+export function targetChecks(source: string, target: string, opts: FieldCheckOptions = {}): FieldCheck[] {
   const tgt = target.trim();
   if (!tgt) return [];
   const checks: FieldCheck[] = [];
+  const english = (opts.targetLang ?? "").toLowerCase().startsWith("en");
+  const tgtFlat = tgt.replace(/\s+/g, " ").toLowerCase();
 
   const candidates = targetDateCandidates(tgt);
   for (const d of sourceDates(source)) {
@@ -158,6 +179,13 @@ export function targetChecks(source: string, target: string): FieldCheck[] {
         rule: "date_mismatch",
         severity: "critical",
         message: `The source date ${d.raw} (${fmt(d)}) does not appear in the translation.`,
+      });
+    } else if (english && !tgtFlat.includes(houseDate(d).toLowerCase())) {
+      // The date is there, but not written the way certified translations write it.
+      checks.push({
+        rule: "date_format",
+        severity: "major",
+        message: `Write the date ${d.raw} as ${houseDate(d)}. Certified translations give every date as month in words, day, four-digit year.`,
       });
     }
   }
@@ -175,6 +203,6 @@ export function targetChecks(source: string, target: string): FieldCheck[] {
   return checks;
 }
 
-export function fieldChecks(source: string, target: string): FieldCheck[] {
-  return [...sourceChecks(source), ...targetChecks(source, target)];
+export function fieldChecks(source: string, target: string, opts: FieldCheckOptions = {}): FieldCheck[] {
+  return [...sourceChecks(source), ...targetChecks(source, target, opts)];
 }

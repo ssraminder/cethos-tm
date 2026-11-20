@@ -7,7 +7,7 @@ export async function runQaForJob(jobId: string): Promise<{ inserted: number; fi
   const supabase = await getServiceClient();
 
   // Find the job's QA profile (or default).
-  const { data: job } = await supabase.from("jobs").select("qa_profile_id").eq("id", jobId).maybeSingle();
+  const { data: job } = await supabase.from("jobs").select("qa_profile_id, target_lang").eq("id", jobId).maybeSingle();
   if (!job) throw new Error("Job not found");
 
   let profileId = job.qa_profile_id;
@@ -74,7 +74,7 @@ export async function runQaForJob(jobId: string): Promise<{ inserted: number; fi
   );
   for (const seg of segments) {
     if (!imageSegmentIds.has(seg.id) || excludedIds.has(seg.id)) continue;
-    for (const c of fieldChecks(seg.source_text, seg.target_text ?? "")) {
+    for (const c of fieldChecks(seg.source_text, seg.target_text ?? "", { targetLang: (job as { target_lang?: string | null }).target_lang })) {
       findings.push({ segment_id: seg.id, rule: `field_${c.rule}`, severity: c.severity, message: c.message });
     }
   }
