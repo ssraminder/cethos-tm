@@ -74,6 +74,9 @@ export function EditorBodyClient({
   const activeTermHits: TermHit[] = active ? termHitsById[active.id] ?? [] : [];
 
   const isImageJob = !!image && image.pages.length > 0;
+  const excludedById = new Map<string, boolean>(
+    (image?.regions ?? []).map((r) => [r.segmentId, !!r.excluded]),
+  );
 
   // Picking a region on the page selects its row: focus the row's target box
   // (which also fires the row's own onActivate) and bring it into view.
@@ -123,7 +126,7 @@ export function EditorBodyClient({
                 <SegmentRow
                   // A corrected source reading or an "illegible" mark changes the row
                   // on the server; the key makes the row pick the new text up.
-                  key={`${s.id}:${s.source_text}:${s.target_text === "[illegible]"}`}
+                  key={`${s.id}:${s.source_text}:${s.target_text === "[illegible]"}:${excludedById.get(s.id) ? "bg" : ""}`}
                   segment={s}
                   readOnly={readOnly}
                   jobId={jobId}
@@ -138,6 +141,7 @@ export function EditorBodyClient({
                   targetRtl={targetRtl}
                   selected={isImageJob && active?.id === s.id}
                   onActivate={(seg) => setActive(seg)}
+                  imageField={isImageJob && excludedById.has(s.id) ? { excluded: excludedById.get(s.id)! } : null}
                 />
               ))}
             </>

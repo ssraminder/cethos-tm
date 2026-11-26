@@ -6,6 +6,7 @@ import { getServiceClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { runQa, finalizeDelivery } from "@/lib/qa/deliver";
 import { upsertTmUnit } from "@/lib/tm/default-tm";
+import { isStaffRole, recordSegmentEdit } from "@/lib/jobs/edit-access";
 
 export type ActionResult<T = unknown> = ({ ok: true } & T) | { ok: false; error: string };
 
@@ -33,13 +34,13 @@ const FindingActionSchema = z.object({
 
 interface FindingContext {
   finding: { id: string; segment_id: string; suggested_target: string | null };
-  segment: { id: string; job_id: string; source_text: string };
+  segment: { id: string; job_id: string; seq: number | null; source_text: string; target_text: string | null; status: string | null };
   job: { id: string; assigned_to: string | null; status: string; source_lang: string; target_lang: string };
 }
 
 async function loadFindingForAction(
   findingId: string,
-  userId: string,
+  me: { id: string; role: string },
 ): Promise<FindingContext | { error: string }> {
   const supabase = await getServiceClient();
   const { data: f } = await supabase
@@ -51,7 +52,7 @@ async function loadFindingForAction(
 
   const { data: seg } = await supabase
     .from("segments")
-    .select("id, job_id, source_text")
+    .select("id, job_id, seq, source_text, target_text, status")
     .eq("id", f.segment_id)
     .maybeSingle();
   if (!seg) return { error: "Segment not found" };
@@ -63,7 +64,9 @@ async function loadFindingForAction(
     .maybeSingle();
   if (!job) return { error: "Job not found" };
 
-  if (job.assigned_to !== userId) return { error: "Not your job" };
+  // The assigned translator, or an admin/PM (staff may act on any job; the
+  // change is recorded in segment_edits).
+  if (job.assigned_to !== me.id && !isStaffRole(me.role)) return { error: "Not your job" };
   if (job.status !== "qa_review") return { error: `Cannot act on findings in '${job.status}'` };
 
   return { finding: f as FindingContext["finding"], segment: seg as FindingContext["segment"], job: job as FindingContext["job"] };
@@ -105,7 +108,7 @@ export async function acceptFindingAction(formData: FormData): Promise<ActionRes
   const parsed = FindingActionSchema.safeParse({ finding_id: formData.get("finding_id") });
   if (!parsed.success) return { ok: false, error: "Invalid input" };
 
-  const ctx = await loadFindingForAction(parsed.data.finding_id, me.id);
+  const ctx = await loadFindingForAction(parsed.data.finding_id, me);
   if ("error" in ctx) return { ok: false, error: ctx.error };
   const { finding, segment, job } = ctx;
 
@@ -147,7 +150,7 @@ export async function rejectFindingAction(formData: FormData): Promise<ActionRes
   });
   if (!parsed.success) return { ok: false, error: "Invalid input" };
 
-  const ctx = await loadFindingForAction(parsed.data.finding_id, me.id);
+  const ctx = await loadFindingForAction(parsed.data.finding_id, me);
   if ("error" in ctx) return { ok: false, error: ctx.error };
   const { job } = ctx;
 
@@ -178,7 +181,7 @@ export async function editAndResolveFindingAction(formData: FormData): Promise<A
   });
   if (!parsed.success) return { ok: false, error: "Invalid input" };
 
-  const ctx = await loadFindingForAction(parsed.data.finding_id, me.id);
+  const ctx = await loadFindingForAction(parsed.data.finding_id, me);
   if ("error" in ctx) return { ok: false, error: ctx.error };
   const { segment, job } = ctx;
 
@@ -187,6 +190,18 @@ export async function editAndResolveFindingAction(formData: FormData): Promise<A
     .from("segments")
     .update({ target_text: parsed.data.new_target, target_origin: "tm_edited" })
     .eq("id", segment.id);
+  const segRow = segment;
+  await recordSegmentEdit({
+    me,
+    jobId: job.id,
+    jobStatus: job.status,
+    segmentId: segment.id,
+    seq: segRow.seq ?? null,
+    action: "qa_edit",
+    asStaff: job.assigned_to !== me.id,
+    before: { target_text: segRow.target_text ?? "", status: segRow.status ?? null },
+    after: { target_text: parsed.data.new_target, status: segRow.status ?? null },
+  });
 
   await writeTmForFix({
     jobId: job.id,

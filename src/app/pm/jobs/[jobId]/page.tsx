@@ -15,7 +15,7 @@ export default async function JobDetail({
   searchParams,
 }: {
   params: Promise<{ jobId: string }>;
-  searchParams: Promise<{ created?: string; error?: string; qa_critical?: string; qa_major?: string; qa_minor?: string }>;
+  searchParams: Promise<{ created?: string; duplicate?: string; error?: string; qa_critical?: string; qa_major?: string; qa_minor?: string }>;
 }) {
   await requireRole(["admin", "pm"]);
   const { jobId } = await params;
@@ -67,12 +67,25 @@ export default async function JobDetail({
   }, {});
 
   // Attached TMs for this job + available TMs that match the language pair.
-  const { data: attachedTms } = await supabase
+  // job_resources.resource_id points at a TM or a termbase (no foreign key),
+  // so PostgREST cannot embed the TM: that query failed and the page said
+  // "No TMs attached" even when one was. Read the rows, then the TMs.
+  const { data: tmRes } = await supabase
     .from("job_resources")
-    .select("resource_id, priority, translation_memories!inner(id, name, source_lang, target_lang)")
+    .select("resource_id, priority")
     .eq("job_id", jobId)
     .eq("resource_type", "tm")
     .order("priority", { ascending: true });
+  const { data: tmRows } = (tmRes ?? []).length
+    ? await supabase
+        .from("translation_memories")
+        .select("id, name, source_lang, target_lang")
+        .in("id", (tmRes ?? []).map((r) => r.resource_id))
+    : { data: [] as Array<{ id: string; name: string; source_lang: string; target_lang: string }> };
+  const tmById = new Map((tmRows ?? []).map((t) => [t.id, t]));
+  const attachedTms = (tmRes ?? [])
+    .filter((r) => tmById.has(r.resource_id))
+    .map((r) => ({ ...r, translation_memories: tmById.get(r.resource_id)! }));
 
   const attachedIds = new Set((attachedTms ?? []).map((r) => r.resource_id));
   const { data: candidateTms } = await supabase
@@ -84,13 +97,31 @@ export default async function JobDetail({
   const availableTms = (candidateTms ?? []).filter((t) => !attachedIds.has(t.id));
 
   // Termbases that include both job languages
-  const { data: attachedTbs } = await supabase
+  const { data: tbRes } = await supabase
     .from("job_resources")
-    .select("resource_id, priority, termbases!inner(id, name, languages)")
+    .select("resource_id, priority")
     .eq("job_id", jobId)
     .eq("resource_type", "termbase")
     .order("priority", { ascending: true });
+  const { data: tbRows } = (tbRes ?? []).length
+    ? await supabase
+        .from("termbases")
+        .select("id, name, languages")
+        .in("id", (tbRes ?? []).map((r) => r.resource_id))
+    : { data: [] as Array<{ id: string; name: string; languages: unknown }> };
+  const tbById = new Map((tbRows ?? []).map((t) => [t.id, t]));
+  const attachedTbs = (tbRes ?? [])
+    .filter((r) => tbById.has(r.resource_id))
+    .map((r) => ({ ...r, termbases: tbById.get(r.resource_id)! }));
   const attachedTbIds = new Set((attachedTbs ?? []).map((r) => r.resource_id));
+
+  // Segment edit history (append-only table segment_edits): who changed what.
+  const { data: edits } = await supabase
+    .from("segment_edits")
+    .select("id, seq, actor_email, actor_role, as_staff, action, job_status, before, after, created_at")
+    .eq("job_id", jobId)
+    .order("created_at", { ascending: false })
+    .limit(200);
   const { data: allTbs } = await supabase.from("termbases").select("id, name, languages, scope");
   const availableTbs = (allTbs ?? []).filter((t) => {
     const langs = t.languages ?? [];
@@ -117,9 +148,9 @@ export default async function JobDetail({
         actions={
           <div className="flex items-center gap-3">
             <RealtimeJobStatus jobId={job.id} />
-            {job.assigned_to && (
-              <Link href={`/translator/editor/${job.id}`} className="px-3 py-2 text-sm font-semibold rounded-md bg-[color:var(--color-navy)] text-white">Open editor (read-only)</Link>
-            )}
+            <Link href={`/translator/editor/${job.id}`} className="px-3 py-2 text-sm font-semibold rounded-md bg-[color:var(--color-navy)] text-white">
+              {["closed", "cancelled"].includes(job.status) ? "Open editor (read-only)" : "Open editor"}
+            </Link>
             <a href={`/pm/jobs/${job.id}/export?format=xliff`} className="px-3 py-2 text-sm font-semibold rounded-md border border-[color:var(--color-slate-200)] bg-white">Download XLIFF</a>
             <a href={`/pm/jobs/${job.id}/export?format=txt`} className="px-3 py-2 text-sm font-semibold rounded-md border border-[color:var(--color-slate-200)] bg-white">Download TXT</a>
             {job.source_format === "image" && (
@@ -150,6 +181,7 @@ export default async function JobDetail({
       {sp.created && (
         <div className="mb-4 rounded-md border border-[color:var(--color-emerald-100)] bg-[color:var(--color-emerald-50)] text-[color:var(--color-emerald-700)] px-3 py-2 text-sm">
           Job created — {job.segment_count} segments ready.
+          {sp.duplicate && " The form was sent more than once; this is the job it created, no duplicate was made."}
         </div>
       )}
       {(sp.qa_critical || sp.qa_major || sp.qa_minor) && (
@@ -379,6 +411,62 @@ export default async function JobDetail({
           </form>
         )}
       </div>
+
+      <div className="bg-white rounded-xl border border-[color:var(--color-border)] p-5 mt-4">
+        <div className="flex items-baseline justify-between mb-3">
+          <div className="text-[10px] uppercase tracking-wider font-bold text-[color:var(--color-slate-500)]">Edit history</div>
+          <div className="text-[10px] text-[color:var(--color-slate-400)]">Every segment change, newest first. Cannot be edited or deleted.</div>
+        </div>
+        {(edits ?? []).length === 0 ? (
+          <p className="text-sm text-[color:var(--color-slate-500)]">No segment edits yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="text-[color:var(--color-slate-500)] uppercase tracking-wide text-[10px]">
+                <tr>
+                  <th className="text-left py-1 pr-3 font-bold">When</th>
+                  <th className="text-left py-1 pr-3 font-bold">Who</th>
+                  <th className="text-left py-1 pr-3 font-bold">#</th>
+                  <th className="text-left py-1 pr-3 font-bold">Change</th>
+                  <th className="text-left py-1 pr-3 font-bold">Before</th>
+                  <th className="text-left py-1 font-bold">After</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(edits ?? []).map((e) => {
+                  const b = (e.before ?? {}) as { target_text?: string; source_text?: string };
+                  const a = (e.after ?? {}) as { target_text?: string; source_text?: string };
+                  const field = e.action === "correct_source" ? "source_text" : "target_text";
+                  return (
+                    <tr key={e.id} className="border-t border-[color:var(--color-border-soft)] align-top">
+                      <td className="py-1.5 pr-3 whitespace-nowrap">{new Date(e.created_at).toLocaleString()}</td>
+                      <td className="py-1.5 pr-3">
+                        {e.actor_email ?? "—"} <span className="text-[color:var(--color-slate-400)]">({e.actor_role})</span>
+                        {e.as_staff && <span className="ml-1 px-1 rounded bg-[color:var(--color-amber-100)] text-[color:var(--color-amber-800)] font-semibold">staff edit</span>}
+                      </td>
+                      <td className="py-1.5 pr-3 mono">{e.seq ?? "—"}</td>
+                      <td className="py-1.5 pr-3">{EDIT_LABELS[e.action] ?? e.action}</td>
+                      <td className="py-1.5 pr-3 mono text-[color:var(--color-slate-500)] max-w-[240px] break-words">{b[field] || "—"}</td>
+                      <td className="py-1.5 mono max-w-[240px] break-words">{a[field] || "—"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </>
   );
 }
+
+const EDIT_LABELS: Record<string, string> = {
+  save: "Saved draft",
+  confirm: "Confirmed",
+  clear: "Cleared",
+  exclude: "Marked background (not translated)",
+  include: "Unmarked background",
+  correct_source: "Corrected source reading",
+  illegible: "Marked illegible",
+  qa_edit: "Edited from QA finding",
+};

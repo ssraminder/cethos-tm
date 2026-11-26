@@ -69,11 +69,20 @@ export async function searchTmAction(input: {
 
   // 1. Resolve TM ids attached to this job that match the language pair.
   //    (Default TMs are pair-specific; staff-attached TMs might be too.)
-  const { data: attached } = await supabase
+  // resource_id has no foreign key (it can be a TM or a termbase), so the
+  // TM cannot be embedded; read the rows, then the TMs, in the same shape.
+  const { data: tmRes } = await supabase
     .from("job_resources")
-    .select("resource_id, translation_memories!inner(id, name, source_lang, target_lang)")
+    .select("resource_id")
     .eq("job_id", job_id)
     .eq("resource_type", "tm");
+  const { data: tmList } = (tmRes ?? []).length
+    ? await supabase
+        .from("translation_memories")
+        .select("id, name, source_lang, target_lang")
+        .in("id", (tmRes ?? []).map((r) => r.resource_id))
+    : { data: [] as Array<{ id: string; name: string; source_lang: string; target_lang: string }> };
+  const attached = (tmList ?? []).map((tm) => ({ resource_id: tm.id, translation_memories: tm }));
 
   // Postgrest's TS inference treats embedded relations as arrays even when
   // the FK cardinality is many-to-one. Normalise via a runtime guard.
@@ -202,11 +211,18 @@ export async function searchGlossaryAction(input: {
     me.role === "pm";
   if (!ok) return { ok: false, error: "Forbidden" };
 
-  const { data: attached } = await supabase
+  const { data: tbRes } = await supabase
     .from("job_resources")
-    .select("resource_id, termbases!inner(id, name)")
+    .select("resource_id")
     .eq("job_id", job_id)
     .eq("resource_type", "termbase");
+  const { data: tbList } = (tbRes ?? []).length
+    ? await supabase
+        .from("termbases")
+        .select("id, name")
+        .in("id", (tbRes ?? []).map((r) => r.resource_id))
+    : { data: [] as Array<{ id: string; name: string }> };
+  const attached = (tbList ?? []).map((tb) => ({ resource_id: tb.id, termbases: tb }));
 
   type AttachedTb = {
     resource_id: string;

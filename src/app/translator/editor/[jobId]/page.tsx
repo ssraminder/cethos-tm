@@ -13,6 +13,7 @@ import { isRtlCode } from "@/lib/i18n/rtl";
 import type { ImagePageView, ImageRegionView } from "./ImagePane";
 import type { ImageRegionLocation, StoredImagePage } from "@/lib/jobs/image-extraction";
 import { fieldChecks, fieldKind, houseDates } from "@/lib/qa/field-rules";
+import { jobEditAccess } from "@/lib/jobs/edit-access";
 
 export default async function EditorPage({
   params,
@@ -43,7 +44,11 @@ export default async function EditorPage({
   const sourceLangName = langNameByCode.get(job.source_lang) ?? null;
   const targetLangName = langNameByCode.get(job.target_lang) ?? null;
 
-  const readOnly = !isAssignedToMe || (job.status !== "assigned" && job.status !== "in_progress" && job.status !== "revision_requested");
+  // One rule for the screen and the server actions (lib/jobs/edit-access):
+  // admins/PMs may edit any open job; the translator only their own.
+  const access = jobEditAccess(me, job);
+  const readOnly = !access.ok;
+  const editingAsStaff = access.ok && access.asStaff;
 
   const jobClass: "production" | "test" = (job.job_class as "production" | "test" | null) ?? "production";
   const qaEnabledFlag: boolean = job.qa_enabled !== false;
@@ -249,6 +254,14 @@ export default async function EditorPage({
           />
         </div>
       </header>
+
+      {editingAsStaff && (
+        <div className="px-4 py-2 bg-[color:var(--color-amber-50)] border-b border-[color:var(--color-amber-100)] text-xs text-[color:var(--color-amber-800)]">
+          <span className="font-semibold">Editing as {me.role === "admin" ? "admin" : "project manager"}.</span>{" "}
+          {job.assigned_to ? "This job is assigned to someone else." : "This job is not assigned yet."}{" "}
+          Every change you make is recorded with your name in the job&apos;s edit history and audit log.
+        </div>
+      )}
 
       {(inQaReview || inPmReview) && (
         <QaReviewPanel

@@ -34,9 +34,20 @@ const Schema = z.object({
   project_id: z.string().uuid().optional().or(z.literal("")),
   qa_enabled: z.string().optional(),
   third_party_ai_allowed: z.string().optional(),
+  submission_id: z.string().uuid().optional(),
 });
 
 const STORAGE_BUCKET = "cat-source-files";
+
+async function findJobBySubmission(submissionId: string): Promise<string | null> {
+  const service = await getServiceClient();
+  const { data } = await service
+    .from("jobs")
+    .select("id")
+    .eq("meta->>submission_id", submissionId)
+    .maybeSingle();
+  return (data as { id: string } | null)?.id ?? null;
+}
 
 export async function createJobFromUploadAction(formData: FormData): Promise<void> {
   const me = await requireRole(["admin", "pm"]);
@@ -50,15 +61,25 @@ export async function createJobFromUploadAction(formData: FormData): Promise<voi
     project_id: formData.get("project_id") || undefined,
     qa_enabled: formData.get("qa_enabled") || undefined,
     third_party_ai_allowed: formData.get("third_party_ai_allowed") || undefined,
+    submission_id: formData.get("submission_id") || undefined,
   });
   if (!parsed.success) {
     redirect(`/pm/jobs/new?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid input")}`);
   }
   const { source_lang, target_lang, reference: refOverride, assigned_to, deadline, project_id } = parsed.data!;
+  const submissionId = parsed.data!.submission_id ?? null;
   const qaEnabled = parsed.data!.qa_enabled === "1";
   const thirdPartyAiAllowed = parsed.data!.third_party_ai_allowed === "1";
   if (source_lang === target_lang) {
     redirect(`/pm/jobs/new?error=${encodeURIComponent("Source and target languages must differ.")}`);
+  }
+
+  // A resubmit of the same rendered form (double click, browser retry,
+  // refresh) must not create a second job. If this form already produced a
+  // job, open it instead of reading the file again.
+  if (submissionId) {
+    const existing = await findJobBySubmission(submissionId);
+    if (existing) redirect(`/pm/jobs/${existing}?created=1&duplicate=1`);
   }
 
   const file = formData.get("file");
@@ -321,6 +342,7 @@ export async function createJobFromUploadAction(formData: FormData): Promise<voi
     project_id: resolvedProjectId,
     qa_enabled: qaEnabled,
     third_party_ai_allowed: thirdPartyAiAllowed,
+    meta: submissionId ? { submission_id: submissionId } : {},
   };
   const { data: job, error: jobErr } = await service
     .from("jobs")
@@ -328,6 +350,12 @@ export async function createJobFromUploadAction(formData: FormData): Promise<voi
     .select("id, reference")
     .single();
   if (jobErr || !job) {
+    // 23505 on jobs_submission_id_key: a parallel request for the same form
+    // won the race. Open the job it created rather than reporting an error.
+    if (jobErr?.code === "23505" && submissionId) {
+      const existing = await findJobBySubmission(submissionId);
+      if (existing) redirect(`/pm/jobs/${existing}?created=1&duplicate=1`);
+    }
     redirect(`/pm/jobs/new?error=${encodeURIComponent(jobErr?.message ?? "Failed to create job")}`);
   }
 
