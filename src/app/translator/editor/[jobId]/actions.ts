@@ -7,6 +7,7 @@ import { getCurrentUser } from "@/lib/auth/current-user";
 import { findMatchesForSegment, type TmMatch } from "@/lib/tm/match";
 import { upsertTmUnit } from "@/lib/tm/default-tm";
 import { translate, getDefaultEngine, isThirdPartyEngine, type MtSuggestion } from "@/lib/mt";
+import { jobEditAccess, recordSegmentEdit } from "@/lib/jobs/edit-access";
 import { isThirdPartyAiAllowed, auditThirdPartyAiCall, THIRD_PARTY_AI_OFF_MESSAGE } from "@/lib/ai-policy";
 
 const SaveSchema = z.object({
@@ -38,19 +39,15 @@ export async function saveSegmentAction(formData: FormData): Promise<SaveResult>
 
   const { data: seg } = await supabase
     .from("segments")
-    .select("id, job_id, source_text, status, jobs!inner(assigned_to, status, source_lang, target_lang)")
+    .select("id, job_id, seq, source_text, target_text, status, jobs!inner(assigned_to, status, source_lang, target_lang)")
     .eq("id", segment_id)
     .maybeSingle();
   if (!seg) return { ok: false, error: "Segment not found" };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const job = (seg as any).jobs;
-  if (job.assigned_to !== me.id && me.role !== "admin" && me.role !== "pm") {
-    return { ok: false, error: "Not your job" };
-  }
-  if (job.status !== "assigned" && job.status !== "in_progress") {
-    return { ok: false, error: `Cannot edit a job in '${job.status}' status` };
-  }
+  const access = jobEditAccess(me, job);
+  if (!access.ok) return { ok: false, error: access.reason };
 
   const trimmed = target_text.trim();
   const wantConfirm = !!confirm && trimmed.length > 0;
@@ -76,7 +73,21 @@ export async function saveSegmentAction(formData: FormData): Promise<SaveResult>
   const { error } = await supabase.from("segments").update(update).eq("id", segment_id);
   if (error) return { ok: false, error: error.message };
 
-  if (job.status === "assigned" && trimmed.length > 0) {
+  await recordSegmentEdit({
+    me,
+    jobId: seg!.job_id as string,
+    jobStatus: job.status,
+    segmentId: segment_id,
+    seq: (seg as { seq?: number }).seq ?? null,
+    action: wantConfirm ? "confirm" : trimmed.length > 0 ? "save" : "clear",
+    asStaff: access.asStaff,
+    before: { target_text: (seg as { target_text?: string }).target_text ?? "", status: seg!.status as string },
+    after: { target_text: trimmed, status: newStatus },
+  });
+
+  // Only the assigned translator's first edit starts the job; a PM fixing a
+  // segment on someone else's (or an unassigned) job leaves the stage alone.
+  if (job.status === "assigned" && trimmed.length > 0 && !access.asStaff) {
     await supabase.from("jobs").update({ status: "in_progress" }).eq("id", seg!.job_id);
   }
 

@@ -295,7 +295,7 @@ export function ImagePane({
                   title="Background security print, hologram text or anything else that is not part of the document's content. The field is left out of the translation."
                   className="px-3 py-2 text-xs font-semibold rounded-md border border-[color:var(--color-slate-200)] bg-white text-[color:var(--color-navy)] disabled:opacity-50"
                 >
-                  {active.excluded ? "Include in the document again" : "Not part of the document"}
+                  {active.excluded ? "Translate it again (not background)" : "Background – do not translate"}
                 </button>
               </div>
             )}

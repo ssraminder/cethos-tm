@@ -5,6 +5,7 @@ import { z } from "zod";
 import { getServiceClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { audit } from "@/lib/auth/audit";
+import { jobEditAccess, recordSegmentEdit, type SegmentEditAction } from "@/lib/jobs/edit-access";
 
 /**
  * Actions that only apply to image jobs (segments read from a page image by
@@ -15,10 +16,9 @@ import { audit } from "@/lib/auth/audit";
 
 export type ImageActionResult = { ok: true } | { ok: false; error: string };
 
-const EDITABLE_JOB_STATUSES = ["assigned", "in_progress", "revision_requested"];
 const ILLEGIBLE_TARGET = "[illegible]";
 
-async function loadEditableSegment(segmentId: string, me: { id: string; role: string }) {
+async function loadEditableSegment(segmentId: string, me: { id: string; role: string; email?: string | null }) {
   const supabase = await getServiceClient();
   const { data: seg } = await supabase
     .from("segments")
@@ -28,14 +28,24 @@ async function loadEditableSegment(segmentId: string, me: { id: string; role: st
   if (!seg) return { error: "Segment not found" as const };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const job = (seg as any).jobs as { assigned_to: string | null; status: string };
-  if (job.assigned_to !== me.id && me.role !== "admin" && me.role !== "pm") return { error: "Not your job" as const };
-  if (!EDITABLE_JOB_STATUSES.includes(job.status)) {
-    return { error: `Cannot edit a job in '${job.status}' status` };
-  }
+  const access = jobEditAccess(me, job);
+  if (!access.ok) return { error: access.reason };
   const meta = (seg.meta ?? {}) as Record<string, unknown>;
   const location = meta.location as { kind?: string } | undefined;
   if (location?.kind !== "image_region") return { error: "This segment was not read from an image" as const };
-  return { supabase, seg, meta };
+  const history = (action: SegmentEditAction, after: { source_text?: string; target_text?: string; status?: string }) =>
+    recordSegmentEdit({
+      me,
+      jobId: seg.job_id as string,
+      jobStatus: job.status,
+      segmentId: seg.id as string,
+      seq: (seg.seq as number | null) ?? null,
+      action,
+      asStaff: access.asStaff,
+      before: { source_text: seg.source_text as string, target_text: (seg.target_text as string) ?? "", status: seg.status as string },
+      after,
+    });
+  return { supabase, seg, meta, history };
 }
 
 const CorrectSchema = z.object({
@@ -50,7 +60,7 @@ export async function correctSourceAction(input: { segment_id: string; source_te
 
   const loaded = await loadEditableSegment(parsed.data.segment_id, me);
   if ("error" in loaded) return { ok: false, error: loaded.error ?? "Not allowed" };
-  const { supabase, seg, meta } = loaded;
+  const { supabase, seg, meta, history } = loaded;
 
   const text = parsed.data.source_text;
   if (text === seg.source_text) return { ok: true };
@@ -71,6 +81,7 @@ export async function correctSourceAction(input: { segment_id: string; source_te
   }
   const { error } = await supabase.from("segments").update(update).eq("id", seg.id);
   if (error) return { ok: false, error: error.message };
+  await history("correct_source", { source_text: text, target_text: (seg.target_text as string) ?? "", status: (update.status as string) ?? (seg.status as string) });
 
   await audit({
     category: "job",
@@ -93,7 +104,7 @@ export async function markIllegibleAction(input: { segment_id: string }): Promis
 
   const loaded = await loadEditableSegment(parsed.data.segment_id, me);
   if ("error" in loaded) return { ok: false, error: loaded.error ?? "Not allowed" };
-  const { supabase, seg, meta } = loaded;
+  const { supabase, seg, meta, history } = loaded;
 
   // Left as a draft on purpose: a person still has to confirm it.
   const { error } = await supabase
@@ -108,6 +119,7 @@ export async function markIllegibleAction(input: { segment_id: string }): Promis
     })
     .eq("id", seg.id);
   if (error) return { ok: false, error: error.message };
+  await history("illegible", { target_text: ILLEGIBLE_TARGET, status: "draft" });
 
   await audit({
     category: "job",
@@ -138,7 +150,7 @@ export async function setFieldExcludedAction(input: { segment_id: string; exclud
 
   const loaded = await loadEditableSegment(parsed.data.segment_id, me);
   if ("error" in loaded) return { ok: false, error: loaded.error ?? "Not allowed" };
-  const { supabase, seg, meta } = loaded;
+  const { supabase, seg, meta, history } = loaded;
 
   const nextMeta: Record<string, unknown> = { ...meta };
   let update: Record<string, unknown>;
@@ -158,6 +170,10 @@ export async function setFieldExcludedAction(input: { segment_id: string; exclud
   }
   const { error } = await supabase.from("segments").update(update).eq("id", seg.id);
   if (error) return { ok: false, error: error.message };
+  await history(parsed.data.excluded ? "exclude" : "include", {
+    target_text: update.target_text as string,
+    status: update.status as string,
+  });
 
   await audit({
     category: "job",

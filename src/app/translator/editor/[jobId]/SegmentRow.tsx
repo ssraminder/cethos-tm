@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState, useTransition, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import { saveSegmentAction, getMtAction } from "./actions";
+import { setFieldExcludedAction } from "./image-actions";
 import type { TmMatch } from "@/lib/tm/match";
 import type { TermHit } from "@/lib/termbase/hits";
 import type { MtSuggestion } from "@/lib/mt";
@@ -170,6 +172,7 @@ export function SegmentRow({
   targetRtl,
   selected,
   onActivate,
+  imageField,
 }: {
   segment: Segment;
   readOnly: boolean;
@@ -196,7 +199,27 @@ export function SegmentRow({
    * The wrapper uses this to drive the right pane's lookup.
    */
   onActivate?: (segment: { id: string; source_text: string }) => void;
+  /**
+   * Set for segments read from a scan (image jobs). `excluded` = marked as
+   * background / not part of the document (watermark, microprint, security
+   * print): not translated, skipped by QA, left out of the certified copy.
+   */
+  imageField?: { excluded: boolean } | null;
 }) {
+  const router = useRouter();
+  const [bgPending, startBg] = useTransition();
+  const excluded = !!imageField?.excluded;
+  function toggleBackground() {
+    startBg(async () => {
+      setError(null);
+      const res = await setFieldExcludedAction({ segment_id: segment.id, excluded: !excluded });
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
+      router.refresh();
+    });
+  }
   const [target, setTarget] = useState(segment.target_text);
   const [status, setStatus] = useState(segment.status);
   const [error, setError] = useState<string | null>(null);
@@ -394,10 +417,30 @@ export function SegmentRow({
         )}
         <div className="flex items-center gap-2 text-[10px] mt-1 font-sans">
           <span className="text-[color:var(--color-slate-400)]">{segment.word_count} {segment.word_count === 1 ? "word" : "words"}</span>
-          {topMatch && (
+          {topMatch && !excluded && (
             <span className={`px-1.5 py-0.5 rounded font-bold ${matchBadgeStyle(topMatch.score)}`} title={`From ${topMatch.tm_name ?? "TM"} · ${topMatch.kind}`}>
               TM {Math.round(topMatch.score * 100)}%
             </span>
+          )}
+          {imageField && (readOnly ? excluded : true) && (
+            <button
+              type="button"
+              onClick={toggleBackground}
+              disabled={readOnly || bgPending}
+              className={[
+                "px-1.5 py-0.5 rounded font-semibold border",
+                excluded
+                  ? "border-[color:var(--color-slate-300)] bg-[color:var(--color-slate-100)] text-[color:var(--color-slate-700)]"
+                  : "border-[color:var(--color-slate-200)] bg-white text-[color:var(--color-slate-600)] hover:bg-[color:var(--color-slate-50)]",
+              ].join(" ")}
+              title={
+                excluded
+                  ? "Marked as background: not translated and left out of the certified document. Click to translate it again."
+                  : "Background text (watermark, microprint, security print): do not translate and leave it out of the certified document"
+              }
+            >
+              {bgPending ? "…" : excluded ? "Background · not translated ↺" : "Background – do not translate"}
+            </button>
           )}
           {!readOnly && showMt && (
             <button type="button" onClick={loadMt} className="text-[color:var(--color-purple-600)] hover:underline">
@@ -405,6 +448,25 @@ export function SegmentRow({
             </button>
           )}
         </div>
+
+        {error && excluded && (
+          <div className="mt-1 text-[10px] text-[color:var(--color-rose-600)] font-sans">{error}</div>
+        )}
+
+        {topMatch && !excluded && (
+          <div className="mt-1.5 rounded border border-[color:var(--color-teal-100)] bg-[color:var(--color-teal-50)]/60 px-2 py-1 font-sans">
+            <div className="text-[10px] text-[color:var(--color-slate-500)]">
+              TM suggestion from {topMatch.tm_name ?? "TM"}
+            </div>
+            <div
+              dir={targetRtl ? "rtl" : "ltr"}
+              lang={targetLangCode}
+              className={`text-xs mono text-[color:var(--color-navy)] ${targetRtl ? "text-right" : ""}`}
+            >
+              {topMatch.target_text}
+            </div>
+          </div>
+        )}
 
         {showMt && mt && (
           <div className="mt-2 rounded border border-[color:var(--color-purple-100)] bg-[color:var(--color-purple-100)]/40 p-2 font-sans">
@@ -476,7 +538,7 @@ export function SegmentRow({
               setOrigin(deriveOriginAfterEdit(v));
             }
           }}
-          disabled={readOnly || isPending}
+          disabled={readOnly || isPending || excluded}
           placeholder={readOnly ? "(read-only)" : "Type translation…"}
           rows={Math.max(2, Math.min(8, Math.ceil(segment.source_text.length / 60)))}
           dir={targetRtl ? "rtl" : "ltr"}
@@ -503,7 +565,7 @@ export function SegmentRow({
             )}
           </div>
         )}
-        {!readOnly && (
+        {!readOnly && !excluded && (
           <div className="flex items-center justify-between gap-2">
             <div className="text-[10px] text-[color:var(--color-slate-400)]">
               {error && <span className="text-[color:var(--color-rose-600)]">{error}</span>}

@@ -2,6 +2,8 @@ import { PageHeader } from "@/components/AppShell";
 import { getServiceClient } from "@/lib/supabase/server";
 import { requireRole } from "@/lib/auth/current-user";
 import { createJobFromUploadAction } from "./actions";
+import SubmitButton from "./SubmitButton";
+import { randomUUID } from "node:crypto";
 
 export default async function NewJobPage({
   searchParams,
@@ -83,6 +85,9 @@ export default async function NewJobPage({
       )}
 
       <form action={createJobFromUploadAction} encType="multipart/form-data" className="bg-white rounded-xl border border-[color:var(--color-border)] p-6 max-w-3xl">
+        {/* One id per rendered form: a resubmit of this same form opens the
+            job it already created instead of creating a duplicate. */}
+        <input type="hidden" name="submission_id" value={randomUUID()} />
         <div className="space-y-5">
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wide text-[color:var(--color-slate-500)] mb-1">Project (optional)</label>
@@ -115,15 +120,17 @@ export default async function NewJobPage({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wide text-[color:var(--color-slate-500)] mb-1">Source language</label>
-              <select name="source_lang" required defaultValue="en-US"
+              <select name="source_lang" required defaultValue=""
                 className="w-full rounded-md border border-[color:var(--color-slate-200)] bg-white px-3 py-2.5 text-sm">
+                <option value="" disabled>— Choose a language —</option>
                 {languages?.map((l) => <option key={l.code} value={l.code}>{l.name} ({l.code})</option>)}
               </select>
             </div>
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wide text-[color:var(--color-slate-500)] mb-1">Target language</label>
-              <select name="target_lang" required defaultValue="fr-FR"
+              <select name="target_lang" required defaultValue=""
                 className="w-full rounded-md border border-[color:var(--color-slate-200)] bg-white px-3 py-2.5 text-sm">
+                <option value="" disabled>— Choose a language —</option>
                 {languages?.map((l) => <option key={l.code} value={l.code}>{l.name} ({l.code})</option>)}
               </select>
             </div>
@@ -195,9 +202,7 @@ export default async function NewJobPage({
         </div>
 
         <div className="mt-6 flex items-center gap-3">
-          <button type="submit" className="px-4 py-2.5 text-sm font-semibold rounded-md bg-[color:var(--color-navy)] hover:bg-[color:var(--color-navy-700)] text-white transition">
-            Create job &amp; segment
-          </button>
+          <SubmitButton />
           <a href={preProjectId ? `/admin/projects/${preProjectId}` : "/pm/jobs"} className="px-4 py-2.5 text-sm font-semibold rounded-md border border-[color:var(--color-slate-200)] bg-white hover:bg-[color:var(--color-slate-50)]">Cancel</a>
         </div>
       </form>
